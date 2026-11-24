@@ -4,12 +4,41 @@
   const $ = id => document.getElementById(id);
   const STORE = 'astronoise.state.v2';
 
+  // Width of the simulated target (Gaussian FWHM, arcseconds). Fixed: it only sets the scale of the picture.
+  const TGT_FWHM = 100;
+  // Common targets: [id, name, peak surface brightness (V-equivalent mag/arcsec^2), spectrum].
+  // Approximate, representative values for the named part of each object.
+  const TARGETS = [
+    ['m42', 'M42 Orion Nebula, core', 17.0, 'line'],
+    ['m57', 'M57 Ring Nebula', 18.5, 'line'],
+    ['m27', 'M27 Dumbbell Nebula', 20.5, 'line'],
+    ['m8', 'M8 Lagoon Nebula', 21.0, 'line'],
+    ['ngc2244', 'Rosette Nebula', 22.5, 'line'],
+    ['ngc7000', 'NGC 7000 North America Nebula', 23.0, 'line'],
+    ['ic434', 'IC 434 behind the Horsehead', 23.5, 'line'],
+    ['veil', 'Veil Nebula filaments', 24.0, 'line'],
+    ['sh2', 'Faint Sharpless emission nebula', 25.5, 'line'],
+    ['m13', 'M13 globular cluster, core', 17.5, 'cont'],
+    ['m31core', 'M31 Andromeda Galaxy, core', 17.0, 'cont'],
+    ['m31disc', 'M31 Andromeda Galaxy, outer disc', 22.5, 'cont'],
+    ['m51', 'M51 Whirlpool Galaxy, arms', 21.0, 'cont'],
+    ['m81', 'M81 Bode\'s Galaxy, arms', 22.0, 'cont'],
+    ['m33', 'M33 Triangulum Galaxy, disc', 22.5, 'cont'],
+    ['m101', 'M101 Pinwheel Galaxy, outer arms', 23.0, 'cont'],
+    ['m45', 'M45 Pleiades reflection nebula', 22.0, 'cont'],
+    ['iris', 'NGC 7023 Iris Nebula, outer dust', 24.0, 'cont'],
+    ['dark', 'Dark nebula dust (e.g. LDN 1235)', 25.5, 'cont'],
+    ['ifn', 'Integrated flux nebula', 26.5, 'cont'],
+    ['tidal', 'Galaxy tidal stream', 27.5, 'cont']
+  ];
+  const TYPE_NAMES = { line: 'Emission nebulae', cont: 'Galaxies, clusters and dust' };
+
   const DEFAULTS = {
     fl: 500, fr: 5, obs: 0, thr: 85,
     camId: 'asi2600mm', pix: 3.76, qe: 91, bits: 16, fw: 50000, dark0: 0.003, darkDouble: 6, rnOverride: 0,
     gain: 100, temp: -10,
     skyMode: 'bortle', bortle: 5, sqm: 20.3, filter: 'L',
-    tgtMag: 23, tgtFwhm: 60, tgtType: 'cont',
+    tgtId: 'm101', tgtMag: 23, tgtFwhm: 100, tgtType: 'cont',
     sub: 120, plan: 'n', n: 60, totalInt: 2, totalSession: 2.17,
     ditherTime: 10, swamp: 5,
     simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, seeing: 2.5
@@ -23,6 +52,12 @@
     else if (typeof DEFAULTS[k] === 'boolean') state[k] = v === 'true' || v === '1';
     else if (k in DEFAULTS) state[k] = typeof DEFAULTS[k] === 'number' ? (isFinite(parseFloat(v)) ? parseFloat(v) : state[k]) : v;
   });
+  state.tgtFwhm = TGT_FWHM;
+  // A stored or URL-supplied brightness that no longer matches the named target makes it a custom one.
+  (function () {
+    const t = TARGETS.find(x => x[0] === state.tgtId);
+    if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
+  })();
   let seed = 12345;
   const N_MAX = 1000000;
 
@@ -71,7 +106,7 @@
       <p>The two images are stretched from just below the background to just above the target peak.</p>`,
     tradeoff: `<h4>Sub-exposure trade-off</h4>
       <p>The total wall-clock time is held at its current value while the sub length varies, so longer subs mean fewer of them.</p>
-      <p><b>Stack SNR.</b> Signal ÷ noise at the target peak after stacking. Short subs lose out twice: read noise is paid once per sub, and each sub costs dither and settle time. The grey line is an ideal camera with no read noise, dark current or overhead.</p>
+      <p><b>Stack SNR.</b> Signal ÷ noise at the target peak after stacking. Short subs lose out twice: read noise is paid once per sub, and each sub costs dither and settle time. The grey line is an ideal camera with no read noise, dark current or overhead. The curve stops at the "Well full" marker: in longer subs the target peak, with the sky and dark current under it, fills the well, so the pixel is clipped and has no meaningful SNR.</p>
       <p><b>Sky-limited marker.</b> The sub length at which read noise raises the background noise by the allowed penalty (5% by default, set in the Sky panel). Beyond it, longer subs gain very little.</p>
       <p><b>Dynamic range.</b> log₂ of the headroom left above the background (full well − sky − dark) divided by the background noise. Stacking N subs adds ½·log₂N stops. Longer subs fill the well with sky and so lose headroom: bright stars clip sooner.</p>
       <p><b>Share of variance.</b> Noise sources add as variances (σ²), so this shows how much of each sub's noise each source is responsible for.</p>
@@ -88,7 +123,7 @@
       <p>ZWO gain settings are in units of 0.1 dB: every 60 units halves the number of electrons per ADU, and with it the full well.</p>
       <p><b>Read noise</b> falls as gain rises, with a sharp drop where the sensor switches to high conversion gain (HCG), if it has that mode. The curve includes quantisation noise from the ADC (e⁻/ADU ÷ √12), which matters at low gain on 12-bit cameras.</p>
       <p><b>Sensor dynamic range</b> is log₂(full well ÷ read noise) for a single frame with no sky.</p>
-      <p><b>Stack SNR</b> uses the current exposure plan. If it is flat, the subs are already sky-limited and extra gain only costs full well.</p>
+      <p><b>Stack SNR</b> uses the current exposure plan. If it is flat, the subs are already sky-limited and extra gain only costs full well. The curve stops at the "Well full" marker, the gain at which the shrinking full well is filled by the target peak in a single sub.</p>
       <p>Click any chart to set the gain.</p>`,
     exposure: `<h4>Exposure</h4>
       <p>Choose the sub length, then plan the session by number of subs, total exposure time or total wall-clock time. The other two are calculated.</p>
@@ -182,13 +217,19 @@
         hint: 'Sets the "sky-limited" sub length: the point where read noise adds this much to the sky background noise.' }
     ] },
     { title: 'Target', info: 'target', open: true, readout: 'tgt', fields: [
+      { key: 'tgtId', label: 'Object', kind: 'select',
+        groups: ['line', 'cont'].map(ty => [TYPE_NAMES[ty], TARGETS.filter(t => t[3] === ty).map(t => [t[0], `${t[1]} (${t[2].toFixed(1)})`])])
+          .concat([['Other', [['custom', 'Custom']]]]),
+        hint: 'Fills in the brightness and spectrum below. Values are approximate.' },
       { key: 'tgtMag', label: 'Peak surface brightness', unit: 'mag/″²', kind: 'range', min: 14, max: 28, step: 0.1 },
-      { key: 'tgtFwhm', label: 'Width (FWHM)', unit: '″', kind: 'range', log: true, min: 2, max: 600 },
       { key: 'tgtType', label: 'Spectrum', kind: 'select',
         options: [['cont', 'Continuum (galaxy, reflection nebula)'], ['line', 'Emission line (Hα, OIII, SII)']],
         hint: 'A continuum target dims as the filter narrows. An emission-line target keeps its V-equivalent flux through any filter.' }
     ] }
   ];
+  // Order of the panels in the sidebar.
+  const PANEL_ORDER = ['Target', 'Exposure', 'Sky', 'Camera', 'Telescope'];
+  SECTIONS.sort((x, y) => PANEL_ORDER.indexOf(x.title) - PANEL_ORDER.indexOf(y.title));
   const FIELDS = {};
   SECTIONS.forEach(sec => sec.fields.forEach(f => FIELDS[f.key] = f));
 
@@ -270,6 +311,11 @@
       value = Math.max(f.min, Math.min(f.max, f.int ? Math.round(value) : value));
     }
     state[key] = value;
+    if (key === 'tgtId') {
+      const t = TARGETS.find(x => x[0] === value);
+      if (t) { state.tgtMag = t[2]; state.tgtType = t[3]; }
+    }
+    if (key === 'tgtMag' || key === 'tgtType') state.tgtId = 'custom';
     if (key === 'camId') {
       const cam = camera();
       Object.assign(state, { pix: cam.pix, qe: cam.qe * 100, bits: cam.bits, fw: cam.fw, dark0: cam.dark0, rnOverride: 0,
@@ -374,7 +420,9 @@
     };
     const markers = labels => [
       { x: p.sub, label: labels ? `Your sub: ${fmtSub(p.sub)}` : '', strong: true },
-      { x: c.tSkyLimited, label: labels ? `Sky-limited: ${fmtSub(c.tSkyLimited)}` : '' }
+      { x: c.tSkyLimited, label: labels ? `Sky-limited: ${fmtSub(c.tSkyLimited)}` : '' },
+      // Beyond this the target peak fills the well in every sub, so there is no SNR to plot.
+      { x: c.tSaturate, label: labels ? `Well full: ${fmtSub(c.tSaturate)}` : '' }
     ];
     Charts.draw($('ch-snr'), Object.assign({}, common, {
       height: 230, markers: markers(true), endLabels: true,
@@ -444,24 +492,27 @@
   function renderGain(p, c) {
     const cam = camera();
     const rn = [], fw = [], dr = [], snr = [];
+    let gSat = null;                                          // first gain at which the target peak fills the well
     const stepG = cam.gainMax > 400 ? 2 : 1;
     for (let g = 0; g <= cam.gainMax; g += stepG) {
       const sen = Model.sensorAtGain(p, g);
       rn.push([g, sen.rn]); fw.push([g, sen.fullWell]); dr.push([g, sen.dr]);
       const gs = Model.stats(c.r, sen, p.sub, p.n, c.r.target);
       snr.push([g, gs.saturated ? NaN : gs.snr]);
+      if (gs.saturated && gSat == null) gSat = g;
     }
     $('gain-sub').textContent = `${cam.name}${cam.hcg != null ? `: high conversion gain switches in at gain ${cam.hcg}` : ''}. Click a chart to set the gain.`;
-    const mk = (id, pts, y, tipFmt, aria, yLabel) => Charts.draw($(id), {
+    const mk = (id, pts, y, tipFmt, aria, yLabel, extra) => Charts.draw($(id), {
       height: 200, xLabel: 'Gain setting (units of 0.1 dB)', yLabel, xDomain: [0, cam.gainMax], series: [{ name: aria, color: '--c-metric', pts }],
-      point: { x: p.gain, y }, markers: [{ x: p.gain, label: `Gain ${p.gain}`, strong: true }],
+      point: { x: p.gain, y }, markers: [{ x: p.gain, label: `Gain ${p.gain}`, strong: true }].concat(extra || []),
       group: 'gain', tipHead: v => 'Gain ' + Math.round(v), tipFmt, aria: aria + ' against gain',
       onPick: x => set('gain', Math.round(x))
     });
     mk('ch-g-rn', rn, c.sen.rn, v => fmtE(v) + ' e⁻', 'Read noise', 'Read noise (e⁻ RMS)');
     mk('ch-g-fw', fw, c.sen.fullWell, v => fmtE(v) + ' e⁻', 'Full well', 'Full well (e⁻)');
     mk('ch-g-dr', dr, c.sen.dr, v => v.toFixed(1) + ' stops', 'Dynamic range', 'Dynamic range (stops)');
-    mk('ch-g-snr', snr, c.st.saturated ? NaN : c.st.snr, v => v.toFixed(1), 'Stack SNR', 'Stack SNR (ratio)');
+    mk('ch-g-snr', snr, c.st.saturated ? NaN : c.st.snr, v => v.toFixed(1), 'Stack SNR', 'Stack SNR (ratio)',
+      gSat != null ? [{ x: gSat, label: `Well full from gain ${gSat}` }] : []);
   }
 
   // ---------- simulation ----------

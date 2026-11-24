@@ -26,7 +26,10 @@
       while (p > L) { k++; p *= u(); }
       return k;
     };
-    return { normal, poisson };
+    // Restart the stream for one pixel and noise source. Every draw then depends only on the seed and
+    // on which pixel it is for, so the noise pattern holds still while the settings change.
+    const at = (pixel, source) => { a = (seed ^ Math.imul(pixel * 8 + source + 1, 0x9E3779B1)) >>> 0; };
+    return { normal, poisson, at };
   }
 
   // Optional field stars, placed along the middle row so they appear in the cross-section.
@@ -79,8 +82,10 @@
         const muT = c.r.target * t * n * profile[x] * fy;
         const muS = stars ? stars[y * W + x] * t * n : 0;
         if (y === cy) {
-          const d = R.poisson(muDark) / n, s = R.poisson(muSky) / n, g = R.poisson(muT) / n;
-          const p = muS > 0 ? R.poisson(muS) / n : 0;
+          const i = y * W + x;
+          const draw = (source, mu) => { R.at(i, source); return R.poisson(mu) / n; };
+          const d = draw(0, muDark), s = draw(1, muSky), g = draw(2, muT), p = muS > 0 ? draw(3, muS) : 0;
+          R.at(i, 4);
           const raw = digitise(d + s + g + p + sdRead * R.normal() / n);
           const r = raw - (d + s + g + p);                    // read noise including the rounding error
           row.dark.push(d); row.sky.push(s); row.tgt.push(g); row.star.push(p); row.read.push(r);
@@ -88,7 +93,10 @@
           row.expTgt.push(muT / n); row.expStar.push(muS / n); row.expSig.push((muT + muS) / n);
           img[y * W + x] = Math.min(raw, fw);
         } else {
-          img[y * W + x] = Math.min(digitise((R.poisson(muDark + muSky + muT + muS) + sdRead * R.normal()) / n), fw);
+          R.at(y * W + x, 0);
+          const photons = R.poisson(muDark + muSky + muT + muS);
+          R.at(y * W + x, 4);
+          img[y * W + x] = Math.min(digitise((photons + sdRead * R.normal()) / n), fw);
         }
       }
     }
