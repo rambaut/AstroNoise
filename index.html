@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AstroNoise — signal and noise in deep-sky imaging</title>
+<script>
+  // Set the theme before first paint: stored choice, otherwise the OS setting.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('astronoise.theme'); } catch (e) {}
+    if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>AstroNoise</h1>
+    <p>Signal, noise and dynamic range in long-exposure astrophotography with CMOS cameras</p>
+  </div>
+  <div class="top-actions">
+    <button id="reset" type="button">Reset</button>
+    <button id="theme" type="button" aria-label="Switch between light and dark theme">Light / dark</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside id="controls" aria-label="Setup"></aside>
+
+  <main>
+    <section class="card">
+      <div class="card-head">
+        <h2 data-info="sim">Simulated pixels</h2>
+        <p>A random draw of photons and sensor noise across a Gaussian target. The chart is the middle row of the image patch.</p>
+      </div>
+      <div class="filters">
+        <label>Frame
+          <span class="seg" id="sim-frame">
+            <button type="button" data-v="single">Single sub</button>
+            <button type="button" data-v="stack">Stack</button>
+          </span>
+        </label>
+        <label>Show
+          <span class="seg" id="sim-view">
+            <button type="button" data-v="raw">Raw electrons</button>
+            <button type="button" data-v="cal">Noise after sky subtraction</button>
+          </span>
+        </label>
+        <label>Sort pixels by
+          <select id="sim-sort">
+            <option value="pos">Position (cross-section)</option>
+            <option value="signal">Expected target signal</option>
+            <option value="tgt">Target photons</option>
+            <option value="sky">Sky glow</option>
+            <option value="dark">Dark current</option>
+            <option value="read">Read noise</option>
+            <option value="total">Measured value</option>
+          </select>
+        </label>
+        <button id="sim-resample" type="button">New random draw</button>
+      </div>
+      <div class="legend" id="lg-sim"></div>
+      <div class="sim">
+        <div class="sim-chart"><canvas id="sim-canvas"></canvas><div class="tooltip" id="sim-tip" hidden></div></div>
+        <div class="patches">
+          <figure><div class="patch"><canvas id="patch-single"></canvas></div><figcaption id="cap-single"></figcaption></figure>
+          <figure><div class="patch"><canvas id="patch-stack"></canvas></div><figcaption id="cap-stack"></figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="tiles" id="tiles" aria-label="Summary"></section>
+    <div id="alerts"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-info="tradeoff">Sub-exposure trade-off</h2>
+        <p id="tradeoff-sub"></p>
+      </div>
+      <h3>Stack signal-to-noise ratio at the target peak</h3>
+      <div id="ch-snr"></div>
+      <h3>Dynamic range above the background (stops)</h3>
+      <div id="ch-dr"></div>
+      <h3>Where the noise in each sub comes from (share of variance)</h3>
+      <div class="legend" id="lg-share"></div>
+      <div id="ch-share"></div>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <div class="card-head">
+          <h2 data-info="time">SNR as the session goes on</h2>
+          <p id="time-sub"></p>
+        </div>
+        <div class="legend" id="lg-time"></div>
+        <div id="ch-time"></div>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <h2 data-info="budget">Noise budget for one sub</h2>
+          <p>Electrons per pixel at the peak of the target</p>
+        </div>
+        <div class="segbar" id="segbar"></div>
+        <table class="budget" id="budget"></table>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-info="gain">Gain</h2>
+        <p id="gain-sub"></p>
+      </div>
+      <div class="minis">
+        <div><h3>Read noise (e⁻ RMS)</h3><div id="ch-g-rn"></div></div>
+        <div><h3>Full well (e⁻)</h3><div id="ch-g-fw"></div></div>
+        <div><h3>Sensor dynamic range (stops)</h3><div id="ch-g-dr"></div></div>
+        <div><h3>Stack SNR with the current exposure plan</h3><div id="ch-g-snr"></div></div>
+      </div>
+    </section>
+
+    <footer>
+      <p><strong>Model.</strong> Per-pixel rates assume a flat spectrum with a V-band zero point of 10⁸ photons s⁻¹ m⁻² nm⁻¹.
+      Sub noise is √(target + sky + dark + read²), with quantisation noise (e⁻/ADU ÷ √12) folded into read noise; stacking N subs improves SNR by √N.
+      Dynamic range is log₂ of the headroom left above the background divided by the background noise. Calibration frames are assumed noiseless.</p>
+      <p><strong>Camera data.</strong> Preset values are approximate transcriptions of published ZWO specifications and gain curves.
+      Check them against the data sheet for your camera; every value can be overridden in the Camera panel.</p>
+    </footer>
+  </main>
+</div>
+
+<script src="js/cameras.js"></script>
+<script src="js/model.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
