@@ -12,7 +12,7 @@
     tgtMag: 23, tgtFwhm: 60, tgtType: 'cont',
     sub: 120, plan: 'n', n: 60, totalInt: 2, totalSession: 2.17,
     ditherTime: 10, swamp: 5,
-    simFrame: 'single', simView: 'raw', simSort: 'pos'
+    simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, seeing: 2.5
   };
 
   let state = Object.assign({}, DEFAULTS);
@@ -20,6 +20,7 @@
   // Settings can also be passed in the URL, e.g. index.html#sub=300&n=24&camId=asi533mc&theme=dark
   new URLSearchParams(location.hash.slice(1)).forEach((v, k) => {
     if (k === 'theme' && (v === 'dark' || v === 'light')) document.documentElement.dataset.theme = v;
+    else if (typeof DEFAULTS[k] === 'boolean') state[k] = v === 'true' || v === '1';
     else if (k in DEFAULTS) state[k] = typeof DEFAULTS[k] === 'number' ? (isFinite(parseFloat(v)) ? parseFloat(v) : state[k]) : v;
   });
   let seed = 12345;
@@ -60,8 +61,11 @@
   const INFO = {
     sim: `<h4>Simulated pixels</h4>
       <p>One random realisation of a small patch of sky containing a Gaussian target. The chart shows the middle row of the patch (marked by the ticks beside each image), one column per pixel.</p>
-      <p><b>Raw electrons.</b> Each column is stacked, from the bottom: dark current, read noise, sky glow, target. The top of the column, traced by the black line, is the value the camera records. Read noise can be negative, in which case it is drawn as a bite out of what lies beneath it.</p>
+      <p><b>Raw electrons.</b> Each column is stacked, from the bottom: dark current, read noise, sky glow, target, then any star light. The top of the column, traced by the black line, is the value the camera records. Read noise includes the rounding to whole ADU and can be negative, in which case it is drawn as a bite out of what lies beneath it.</p>
       <p><b>Noise after sky subtraction.</b> The expected (mean) sky glow and dark current are subtracted from every pixel — the same constant everywhere. What is left of each source is its random departure from its mean, positive or negative: sky shot noise, dark shot noise, target shot noise and read noise. The black line is the background-subtracted pixel value, which scatters around the pink expected-signal curve. This is a perfect subtraction; real background estimates and dark frames add a little noise of their own.</p>
+      <p><b>Stretched.</b> What the data look like after a non-linear screen stretch, on a scale where 0 is black and 1 is the full well. The black point is set just below the background and a midtones curve lifts the background to a quarter of the range, so the faintest values are spread out the most. That is where the camera's digitisation shows: each pixel is recorded as a whole number of ADU, and when those steps are large compared with the noise (low gain, a 12-bit ADC, short subs) the values fall onto a few visible levels, drawn as faint lines. Pixels at 1.0 are clipped. The mean of N subs can take values 1/N of an ADU apart, which is why stacking smooths the posterisation away. The two images use the same stretch in this mode.</p>
+      <p><b>Full well.</b> For a single sub, the dashed line marks the full well at the current gain. A pixel cannot record more than this: anything above it is drawn grey and lost. The mean of many subs has no full well of its own, but a pixel that clips in the subs is still clipped in their mean.</p>
+      <p><b>Stars.</b> Adds six stars, of magnitude 8 to 18 in steps of two, along the middle row. Each is a Gaussian disc whose width is the seeing set in the Sky panel. They show how quickly bright stars clip compared with the faint target.</p>
       <p><b>Frame.</b> A single sub, or the mean of all the subs in the plan: averaging N subs shrinks every noise term by √N while the signal stays put.</p>
       <p><b>Sort.</b> Re-orders the pixels by one source so its distribution can be compared with the others.</p>
       <p>The two images are stretched from just below the background to just above the target peak.</p>`,
@@ -172,6 +176,8 @@
       { key: 'bortle', label: 'Bortle class', kind: 'range', min: 1, max: 9, step: 1, int: true, showIf: s => s.skyMode === 'bortle' },
       { key: 'sqm', label: 'Sky brightness', unit: 'mag/″²', kind: 'range', min: 16, max: 22.2, step: 0.05, showIf: s => s.skyMode === 'sqm' },
       { key: 'filter', label: 'Filter', kind: 'select', options: Model.FILTERS.map(f => [f.id, `${f.name} (${f.bw} nm)`]) },
+      { key: 'seeing', label: 'Seeing (star FWHM)', unit: '″', kind: 'number', min: 0.5, max: 10, step: 0.1,
+        hint: 'Sets the size of the stars in the simulated pixels.' },
       { key: 'swamp', label: 'Allowed read-noise penalty', unit: '%', kind: 'number', min: 1, max: 50, step: 1,
         hint: 'Sets the "sky-limited" sub length: the point where read noise adds this much to the sky background noise.' }
     ] },
@@ -460,7 +466,7 @@
 
   // ---------- simulation ----------
   let simGeom = null, simData = null;
-  const SORT_LABELS = { signal: 'expected target signal', tgt: 'target photons', sky: 'sky glow', dark: 'dark current', read: 'read noise', total: 'measured value' };
+  const SORT_LABELS = { signal: 'expected signal', star: 'star photons', tgt: 'target photons', sky: 'sky glow', dark: 'dark current', read: 'read noise', total: 'measured value' };
 
   function renderSim(p, c) {
     simData = Sim.generate(c, p, seed);
@@ -471,17 +477,25 @@
     });
     document.querySelectorAll('#sim-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === state.simView)));
     $('sim-sort').value = state.simSort;
-    const cal = state.simView === 'cal';
-    legend('lg-sim', [
-      [cal ? 'Target shot noise' : 'Target', '--c-target'], ['Sky glow', '--c-sky'], ['Read noise', '--c-read'], ['Dark current', '--c-dark'],
-      ['Measured value' + (cal ? ' (sky subtracted)' : ''), '--text-primary', 'line']
-    ].concat(cal ? [['Expected signal', '--c-expected', 'line']] : []));
+    $('sim-stars').checked = state.simStars;
+    const cal = state.simView === 'cal', str = state.simView === 'str';
+    const per = state.simFrame === 'stack' ? ', mean per sub (e⁻)' : ' in one sub (e⁻)';
     simGeom = Sim.drawSection($('sim-canvas'), simData, f, {
-      view: state.simView, sort: state.simSort, sortLabel: SORT_LABELS[state.simSort],
-      yLabel: (cal ? 'After background subtraction' : 'Electrons per pixel') + (state.simFrame === 'stack' ? ', mean per sub (e⁻)' : ' in one sub (e⁻)')
+      view: state.simView, sort: state.simSort, sortLabel: SORT_LABELS[state.simSort], showFullWell: state.simFrame === 'single',
+      yLabel: str ? 'Stretched value (0 = black, 1 = full well)' : (cal ? 'After background subtraction' : 'Electrons per pixel') + per
     });
-    Sim.drawPatch($('patch-single'), simData, simData.single);
-    Sim.drawPatch($('patch-stack'), simData, simData.stack);
+    const clipped = f.row.anyClip ? [['Clipped: above full well', '--c-clipped']] : [];
+    if (str) {
+      legend('lg-sim', [['Stretched pixel value', '--c-stretch'], ['Expected value without noise', '--c-expected', 'line']].concat(clipped,
+        simGeom.levels > 1 ? [['Faint lines: individual ADC levels', '--grid', 'line']] : []));
+    } else {
+      legend('lg-sim', (state.simStars ? [[cal ? 'Star shot noise' : 'Stars', '--c-star']] : []).concat([
+        [cal ? 'Target shot noise' : 'Target', '--c-target'], ['Sky glow', '--c-sky'], ['Read noise', '--c-read'], ['Dark current', '--c-dark'],
+        ['Measured value' + (cal ? ' (sky subtracted)' : ''), '--text-primary', 'line']
+      ], cal ? [['Expected signal', '--c-expected', 'line']] : [], clipped));
+    }
+    Sim.drawPatch($('patch-single'), simData, simData.single, str);
+    Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
     $('cap-single').textContent = `Single ${fmtSub(p.sub)} sub · peak SNR ${c.st.snrSub.toFixed(2)}`;
     $('cap-stack').textContent = `Mean of ${p.n} subs (${fmtDur(c.integration)}) · peak SNR ${c.st.snr.toFixed(1)}`;
   }
@@ -493,19 +507,33 @@
     const x = e.clientX - box.left, rank = Math.floor((x - simGeom.m.l) / simGeom.bw);
     if (rank < 0 || rank >= Sim.W) { tip.hidden = true; return; }
     const i = simGeom.order[rank], row = simData[state.simFrame].row, cal = state.simView === 'cal';
-    const exp = { dark: simData.expDark, sky: simData.expSky, tgt: row.expTgt[i], read: 0 };
-    const rows = ['tgt', 'sky', 'read', 'dark'].map(k => {
+    const place = (html) => {
+      tip.innerHTML = html; tip.hidden = false;
+      const tw = tip.offsetWidth;
+      tip.style.left = (x + 14 + tw > box.width ? x - 14 - tw : x + 14) + 'px';
+      tip.style.top = '12px';
+    };
+    const head = `Pixel ${i - (Sim.W - 1) / 2 >= 0 ? '+' : '−'}${Math.abs(i - (Sim.W - 1) / 2)} from centre`;
+    if (state.simView === 'str') {
+      const fr = simData[state.simFrame], st = Sim.stretcher(simData, fr), adu = row.total[i] / (fr.step * fr.n);
+      const line = (sw, name, v) => `<div class="row">${sw}<span>${name}</span><b>${v}</b></div>`;
+      place(`<div class="head">${head}</div>` +
+        line(`<i class="sw" style="background:var(${row.clip[i] ? '--c-clipped' : '--c-stretch'})"></i>`, row.clip[i] ? 'Stretched value (clipped)' : 'Stretched value', st(row.total[i]).toFixed(3)) +
+        line('<i class="sw line" style="background:var(--c-expected)"></i>', 'Expected without noise', st(simData.expDark + simData.expSky + row.expSig[i]).toFixed(3)) +
+        line('', 'Recorded value', (fr.n === 1 ? Math.round(adu).toLocaleString('en-US') : adu.toFixed(2)) + ' ADU') +
+        line('', 'In electrons', fmtE(row.total[i]) + ' e⁻'));
+      return;
+    }
+    const exp = { dark: simData.expDark, sky: simData.expSky, tgt: row.expTgt[i], star: row.expStar[i], read: 0 };
+    const rows = (state.simStars ? ['star'] : []).concat(['tgt', 'sky', 'read', 'dark']).map(k => {
       const v = cal ? fmtSigned(row[k][i] - exp[k]) : (k === 'read' ? fmtSigned(row[k][i]) : fmtE(row[k][i]));
       return `<div class="row"><i class="sw" style="background:var(${Sim.COLOR_VARS[k]})"></i><span>${Sim.LABELS[k]}</span><b>${v} e⁻</b></div>`;
     });
     const measured = cal ? row.total[i] - simData.expDark - simData.expSky : row.total[i];
-    if (cal) rows.push(`<div class="row"><i class="sw line" style="background:var(--c-expected)"></i><span>Expected signal</span><b>${fmtE(row.expTgt[i])} e⁻</b></div>`);
+    if (cal) rows.push(`<div class="row"><i class="sw line" style="background:var(--c-expected)"></i><span>Expected signal</span><b>${fmtE(row.expSig[i])} e⁻</b></div>`);
     rows.push(`<div class="row"><i class="sw line" style="background:var(--text-primary)"></i><span>Measured</span><b>${fmtE(measured)} e⁻</b></div>`);
-    tip.innerHTML = `<div class="head">Pixel ${i - (Sim.W - 1) / 2 >= 0 ? '+' : '−'}${Math.abs(i - (Sim.W - 1) / 2)} from centre${cal ? ' · deviation from expected' : ''}</div>` + rows.join('');
-    tip.hidden = false;
-    const tw = tip.offsetWidth;
-    tip.style.left = (x + 14 + tw > box.width ? x - 14 - tw : x + 14) + 'px';
-    tip.style.top = '12px';
+    if (row.clip[i]) rows.push(`<div class="row"><i class="sw" style="background:var(--c-clipped)"></i><span>Clipped at full well: lost</span><b>${fmtE(row.raw[i] - row.total[i])} e⁻</b></div>`);
+    place(`<div class="head">${head}${cal ? ' · deviation from expected' : ''}</div>` + rows.join(''));
   }
 
   // ---------- wiring ----------
@@ -521,6 +549,7 @@
     });
     seg('sim-frame', 'simFrame');
     seg('sim-view', 'simView');
+    $('sim-stars').addEventListener('change', e => { state.simStars = e.target.checked; schedule(); });
     $('sim-sort').addEventListener('change', e => { state.simSort = e.target.value; schedule(); });
     $('sim-resample').addEventListener('click', () => { seed = (Math.random() * 1e9) | 0; schedule(); });
     $('sim-canvas').addEventListener('pointermove', simHover);

@@ -47,6 +47,7 @@
           <span class="seg" id="sim-view">
             <button type="button" data-v="raw">Raw electrons</button>
             <button type="button" data-v="cal">Noise after sky subtraction</button>
+            <button type="button" data-v="str">Stretched</button>
           </span>
         </label>
         <label>Sort pixels by
@@ -54,12 +55,14 @@
             <option value="pos">Position (cross-section)</option>
             <option value="signal">Expected target signal</option>
             <option value="tgt">Target photons</option>
+            <option value="star">Star photons</option>
             <option value="sky">Sky glow</option>
             <option value="dark">Dark current</option>
             <option value="read">Read noise</option>
             <option value="total">Measured value</option>
           </select>
         </label>
+        <label><input type="checkbox" id="sim-stars"> Add stars (magnitude 8 to 18)</label>
         <button id="sim-resample" type="button">New random draw</button>
       </div>
       <div class="legend" id="lg-sim"></div>

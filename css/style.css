@@ -14,6 +14,9 @@
   --c-sky: #eb6834;
   --c-target: #2a78d6;
   --c-read: #6250d6;
+  --c-star: #eda100;
+  --c-clipped: #a9a7a0;
+  --c-stretch: #52514e;
   --on-read: #ffffff;
   /* Summary metrics for the current setup */
   --c-metric: #2a78d6;
@@ -37,6 +40,9 @@
   --c-sky: #d95926;
   --c-target: #3987e5;
   --c-read: #9085e9;
+  --c-star: #c98500;
+  --c-clipped: #6f6e69;
+  --c-stretch: #c3c2b7;
   --on-read: #ffffff;
   --c-metric: #3987e5;
   --c-expected: #d55181;
@@ -183,6 +189,7 @@ main { padding: 16px 20px 40px; display: grid; gap: 16px; min-width: 0; }
 
 /* Simulation */
 .filters { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 8px; }
+.filters input[type="checkbox"] { accent-color: var(--c-metric); margin: 0; }
 .filters label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); padding: 4px 10px; }

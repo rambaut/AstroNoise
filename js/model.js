@@ -78,7 +78,8 @@
     const tgtBw = s.tgtType === 'line' ? V_BAND_NM : bw;
     const target = perMag0 * Math.pow(10, -0.4 * s.tgtMag) * tgtBw;       // at the peak of the Gaussian
     const dark = s.dark0 * Math.pow(2, s.temp / s.darkDouble);
-    return { aperture, area, scale, pixArea, bw, mu, sky, target, dark };
+    const star0 = F0 * area * s.qe * (s.thr / 100) * bw;                 // e-/s from a magnitude-0 star
+    return { aperture, area, scale, pixArea, bw, mu, sky, target, dark, star0 };
   }
 
   /** Per-sub and stacked statistics at one pixel receiving `targetRate` e-/s. */
