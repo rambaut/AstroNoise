@@ -149,6 +149,7 @@ The simulation draws a 161 × 81 pixel patch containing a Gaussian target and, o
 - **Stars** are integrated over each pixel using the error function, computed with the rational approximation 7.1.26 of Abramowitz and Stegun [15].
 - **Background subtraction** removes the model means of sky and dark current, not an estimate from the data.
 - **The histogram** counts every pixel of each patch in equal-width bins of brightness from 0 to 1, with the count on a log scale. Brightness is the pixel value divided by the full well, clamped to 0 and 1, or the stretched value in the stretched view. The axis can be zoomed to the range of values present, or made logarithmic, in which case pixels at zero are omitted.
+- **The side plots** other than the histogram and stretch curve use fresh samples of a single pixel, digitised and clipped in the same way as the patch: 4,000 per distribution, 2,000 per measured noise value and 400 per level of the photon transfer curve. Measured noise is the sample standard deviation. The photon transfer curve follows the usual construction [8]. Each patch in the "stack building up" view is an independent draw, not the same subs accumulating.
 - **The stretched view** rescales so that the full well is 1, sets a black point 2.8 standard deviations below the median background, and applies a midtones transfer function `MTF(m, x) = (m − 1)x / ((2m − 1)x − m)` chosen to lift the background to 0.25. This is the form of automatic stretch used by PixInsight's ScreenTransferFunction [16].
 
 ## Data

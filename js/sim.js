@@ -68,9 +68,7 @@
     const muSky = c.r.sky * t * n, muDark = c.r.dark * t * n;
     // A single sub is digitised exactly: analogue read noise, then rounding to whole ADU. The mean of
     // n subs can take values 1/n ADU apart; there the rounding error of each sub is treated as noise.
-    const sdRead = (n === 1 ? c.sen.rnAnalog : c.sen.rn) * Math.sqrt(n);
-    const step = c.sen.eAdu / n;
-    const digitise = v => Math.round(v / step) * step;
+    const { sdRead, step, digitise } = digitiser(c.sen, n);
     const profile = new Float64Array(W);
     for (let x = 0; x < W; x++) profile[x] = Math.exp(-((x - cx) * (x - cx)) / (2 * sigmaPx * sigmaPx));
     for (let y = 0; y < H; y++) {
@@ -101,6 +99,55 @@
     return { img, row, step };
   }
 
+  /**
+   * How the mean of n subs is digitised. A single sub is exact: analogue read noise, then rounding
+   * to whole ADU. The mean of n subs moves in steps of 1/n ADU, and each sub's rounding error is
+   * treated as extra read noise. `sdRead` is the read noise of the sum of the n subs.
+   */
+  function digitiser(sen, n) {
+    const step = sen.eAdu / n;
+    return { step, sdRead: (n === 1 ? sen.rnAnalog : sen.rn) * Math.sqrt(n), digitise: v => Math.round(v / step) * step };
+  }
+
+  /** K independent values of one pixel that collects `mu` electrons per sub, as the mean of n subs. */
+  function samplePixel(sen, mu, n, K, seed) {
+    const R = rng(seed), { sdRead, digitise } = digitiser(sen, n);
+    const out = new Float64Array(K);
+    R.at(0, 0);
+    for (let k = 0; k < K; k++) out[k] = Math.min(digitise((R.poisson(mu * n) + sdRead * R.normal()) / n), sen.fullWell);
+    return out;
+  }
+
+  function moments(a) {
+    let m = 0, v = 0;
+    for (let i = 0; i < a.length; i++) m += a[i];
+    m /= a.length;
+    for (let i = 0; i < a.length; i++) v += (a[i] - m) * (a[i] - m);
+    return { mean: m, sd: Math.sqrt(v / Math.max(1, a.length - 1)) };
+  }
+
+  /** Background noise (e-, per-sub scale) measured from a fresh sample of sky-only pixels in a stack of n subs. */
+  function measuredNoise(c, sim, n, seed) {
+    return moments(samplePixel(c.sen, sim.bg, n, 2000, seed + 31 * n)).sd;
+  }
+
+  /** Up to `count` sub counts spaced geometrically from 1 to n. */
+  function subSteps(n, count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const k = Math.max(1, Math.round(Math.pow(n, i / (count - 1))));
+      if (!out.includes(k)) out.push(k);
+    }
+    return out;
+  }
+
+  /** One more patch, for a stack of n subs, from the same scene as `sim`. */
+  function extraFrame(c, s, sim, n, seed) {
+    if (n === 1) return sim.single;
+    if (n === s.n) return sim.stack;
+    return Object.assign(field(c, s.sub, n, sim.sigmaPx, seed + 104729 * n, sim.starRates), { n, sd: sim.single.sd / Math.sqrt(n) });
+  }
+
   function generate(c, s, seed) {
     const sigmaPx = Math.max(0.5, s.tgtFwhm / c.r.scale / 2.3548);
     const bg = (c.r.sky + c.r.dark) * s.sub;
@@ -108,7 +155,7 @@
     const sd1 = Math.sqrt(bg + c.sen.rn * c.sen.rn);
     const stars = s.simStars ? starMap(c, s) : null;
     return {
-      W, H, sigmaPx, bg, peak, fullWell: c.sen.fullWell, stars: s.simStars ? STARS : [],
+      W, H, sigmaPx, bg, peak, fullWell: c.sen.fullWell, stars: s.simStars ? STARS : [], starRates: stars,
       expSky: c.r.sky * s.sub, expDark: c.r.dark * s.sub,
       single: Object.assign(field(c, s.sub, 1, sigmaPx, seed, stars), { n: 1, sd: sd1 }),
       stack: Object.assign(field(c, s.sub, s.n, sigmaPx, seed + 7919, stars), { n: s.n, sd: sd1 / Math.sqrt(s.n) })
@@ -252,6 +299,166 @@
     });
     ctx.textAlign = 'center';
     ctx.fillText((curve ? 'Linear brightness in' : stretched ? 'Stretched brightness' : 'Brightness') + (log ? ' (log scale)' : ' (1 = full well)'), m.l + pw / 2, m.t + ph + 17);
+  }
+
+  // ---------- small side plots ----------
+  const FONT = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const fmtTick = v => v === 0 ? '0' : Math.abs(v) >= 10000 ? +(v / 1000).toPrecision(2) + 'k' : Math.abs(v) < 0.01 ? v.toExponential(0).replace('e-', 'e−') : String(+v.toPrecision(2));
+
+  /** 1-2-5 ticks inside [lo, hi] for a log axis, thinned to about `want`. */
+  function logTicks(lo, hi, want) {
+    let t = [];
+    for (let d = Math.floor(Math.log10(lo)); d <= Math.ceil(Math.log10(hi)); d++) [1, 2, 5].forEach(k => { const v = k * Math.pow(10, d); if (v >= lo * 0.999 && v <= hi * 1.001) t.push(v); });
+    if (t.length > want) { const dec = t.filter(v => Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9); if (dec.length >= 2) t = dec; }
+    while (t.length > want) t = t.filter((_, i) => i % 2 === 0);
+    return t;
+  }
+  function linTicks(lo, hi, want) {
+    const raw = (hi - lo) / want, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 5, 10].map(k => k * mag).find(v => v >= raw);
+    const t = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) t.push(+v.toPrecision(10));
+    return t;
+  }
+
+  /**
+   * Axes for a small canvas plot. cfg = {xDomain, yDomain, xLog, yLog, xTitle, yTicks: false to hide,
+   * top: extra top margin for marker labels}. Returns the context and the scale functions.
+   */
+  function miniPlot(canvas, cfg) {
+    const css = getComputedStyle(canvas);
+    const col = name => css.getPropertyValue(name).trim();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cw, ch);
+    const m = { l: cfg.yTicks === false ? 8 : 30, r: 12, t: 6 + (cfg.top || 0), b: 30 };
+    const pw = cw - m.l - m.r, ph = ch - m.t - m.b;
+    const tr = (log, d) => v => ((log ? Math.log10(v) : v) - (log ? Math.log10(d[0]) : d[0])) / ((log ? Math.log10(d[1]) : d[1]) - (log ? Math.log10(d[0]) : d[0]));
+    const fx = tr(cfg.xLog, cfg.xDomain), fy = tr(cfg.yLog, cfg.yDomain);
+    const X = v => m.l + fx(v) * pw, Y = v => m.t + ph - fy(v) * ph;
+    ctx.font = FONT;
+    if (cfg.yTicks !== false) {
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+      (cfg.yLog ? logTicks(cfg.yDomain[0], cfg.yDomain[1], 4) : linTicks(cfg.yDomain[0], cfg.yDomain[1], 4)).forEach(v => {
+        const yy = Math.round(Y(v)) + 0.5;
+        ctx.strokeStyle = col('--grid'); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(m.l, yy); ctx.lineTo(m.l + pw, yy); ctx.stroke();
+        ctx.fillStyle = col('--text-muted'); ctx.fillText(fmtTick(v), m.l - 4, yy);
+      });
+    }
+    ctx.strokeStyle = col('--axis'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(m.l, m.t + ph + 0.5); ctx.lineTo(m.l + pw, m.t + ph + 0.5); ctx.stroke();
+    ctx.fillStyle = col('--text-muted'); ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    (cfg.xLog ? logTicks(cfg.xDomain[0], cfg.xDomain[1], 4) : linTicks(cfg.xDomain[0], cfg.xDomain[1], 4)).forEach(v => {
+      const x = X(v);
+      ctx.fillText(fmtTick(v), Math.max(m.l + 6, Math.min(m.l + pw - 4, x)), m.t + ph + 4);
+      ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, m.t + ph); ctx.lineTo(Math.round(x) + 0.5, m.t + ph + 3); ctx.stroke();
+    });
+    ctx.fillText(cfg.xTitle, m.l + pw / 2, m.t + ph + 17);
+    const clip = fn => { ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t - 1, pw, ph + 1); ctx.clip(); fn(); ctx.restore(); };
+    return { ctx, X, Y, col, m, pw, ph, clip };
+  }
+
+  /**
+   * Values taken by a sky-only pixel and by the target-peak pixel over many repeats, in a stack of
+   * n subs: sampled histograms with the expected normal curves. `domain` is shared between plots.
+   */
+  function drawDist(canvas, c, sim, n, domain, seed) {
+    const P = miniPlot(canvas, { xDomain: domain, yDomain: [0, 1], yTicks: false, top: 12, xTitle: 'Pixel value (e⁻, mean per sub)' });
+    const { ctx, X, m, pw, ph } = P, K = 4000, BINS = Math.max(24, Math.floor(pw / 2));
+    const rn2 = c.sen.rn * c.sen.rn, binW = (domain[1] - domain[0]) / BINS;
+    const items = [['Sky', sim.bg, P.col('--c-sky'), 1], ['Target', sim.bg + sim.peak, P.col('--c-target'), 2]].map(([name, mu, color, src]) => {
+      const h = new Array(BINS).fill(0);
+      samplePixel(c.sen, mu, n, K, seed + src * 977 + n).forEach(v => { const b = Math.floor((v - domain[0]) / binW); if (b >= 0 && b < BINS) h[b]++; });
+      const sd = Math.sqrt((mu + rn2) / n);
+      return { name, mu, color, h, sd, peak: K * binW / (sd * Math.sqrt(2 * Math.PI)) };
+    });
+    const top = Math.max.apply(null, items.map(it => Math.max(it.peak, Math.max.apply(null, it.h)))) * 1.05;
+    const y = v => m.t + ph - Math.min(1, v / top) * ph;
+    P.clip(() => items.forEach(it => {
+      ctx.beginPath(); ctx.moveTo(m.l, m.t + ph);
+      it.h.forEach((v, k) => { ctx.lineTo(m.l + k * pw / BINS, y(v)); ctx.lineTo(m.l + (k + 1) * pw / BINS, y(v)); });
+      ctx.lineTo(m.l + pw, m.t + ph); ctx.closePath();
+      ctx.globalAlpha = 0.3; ctx.fillStyle = it.color; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath();
+      for (let px = 0; px <= pw; px++) {
+        const v = domain[0] + px / pw * (domain[1] - domain[0]), z = (v - it.mu) / it.sd;
+        const yy = y(it.peak * Math.exp(-0.5 * z * z));
+        if (px) ctx.lineTo(m.l + px, yy); else ctx.moveTo(m.l + px, yy);
+      }
+      ctx.strokeStyle = it.color; ctx.lineWidth = 1.75; ctx.lineJoin = 'round'; ctx.stroke();
+    }));
+    // Direct labels: sky to the left of its mean, target to the right, so they never collide.
+    ctx.font = FONT; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = P.col('--text-primary');
+    ctx.textAlign = 'right'; ctx.fillText('Sky', Math.max(m.l + 18, X(items[0].mu) - 3), m.t - 3);
+    ctx.textAlign = 'left'; ctx.fillText('Target peak', Math.min(m.l + pw - 56, X(items[1].mu) + 3), m.t - 3);
+    [items[0], items[1]].forEach(it => {
+      ctx.strokeStyle = it.color; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(X(it.mu), m.t); ctx.lineTo(X(it.mu), m.t + ph); ctx.stroke(); ctx.setLineDash([]);
+    });
+  }
+  /** x-range for the two distribution plots: wide enough for the single-sub spread. */
+  function distDomain(c, sim) {
+    const rn2 = c.sen.rn * c.sen.rn;
+    const lo = sim.bg - 4 * Math.sqrt(sim.bg + rn2), hi = sim.bg + sim.peak + 4 * Math.sqrt(sim.bg + sim.peak + rn2);
+    return [lo, Math.min(hi, Math.max(c.sen.fullWell * 1.05, lo + 1))];
+  }
+
+  /** Background noise measured in the simulation as subs are added, against the 1/sqrt(N) law. */
+  function drawNoiseVsSubs(canvas, c, sim, s, seed) {
+    const n = Math.max(2, s.n), sd1 = Math.sqrt(sim.bg + c.sen.rn * c.sen.rn);
+    const P = miniPlot(canvas, { xLog: true, yLog: true, xDomain: [1, n], yDomain: [sd1 / Math.sqrt(n) / 1.6, sd1 * 1.6], xTitle: 'Number of subs stacked (log scale)' });
+    const { ctx, X, Y, m, pw } = P;
+    ctx.strokeStyle = P.col('--text-muted'); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(X(1), Y(sd1)); ctx.lineTo(X(n), Y(sd1 / Math.sqrt(n))); ctx.stroke();
+    ctx.font = FONT; ctx.fillStyle = P.col('--text-secondary'); ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('Theory: 1/√N', X(Math.pow(n, 0.45)), Y(sd1 / Math.pow(n, 0.225)) - 5);
+    subSteps(s.n, 8).forEach(k => {
+      const sd = measuredNoise(c, sim, k, seed);
+      if (!(sd > 0)) return;
+      ctx.beginPath(); ctx.arc(X(Math.max(1, k)), Y(sd), 3.5, 0, 2 * Math.PI);
+      ctx.fillStyle = P.col('--c-metric'); ctx.fill();
+      ctx.strokeStyle = P.col('--surface'); ctx.lineWidth = 1.5; ctx.stroke();
+    });
+  }
+
+  /** Photon transfer curve of a single sub: measured noise against mean signal, with its three regimes. */
+  function drawPtc(canvas, c, sim, seed) {
+    const fw = c.sen.fullWell, rn = c.sen.rn;
+    const xd = [Math.min(1, rn * rn / 10), fw * 2.5], yd = [Math.min(rn, Math.sqrt(xd[0])) / 2, Math.sqrt(fw) * 2.5];
+    const P = miniPlot(canvas, { xLog: true, yLog: true, xDomain: xd, yDomain: yd, top: 22, xTitle: 'Mean signal in one sub (e⁻, log scale)' });
+    const { ctx, X, Y, m, pw, ph } = P;
+    const curve = (fn, color, dash, width) => P.clip(() => {
+      ctx.beginPath();
+      for (let px = 0; px <= pw; px++) { const S = Math.pow(10, Math.log10(xd[0]) + px / pw * Math.log10(xd[1] / xd[0])); const yy = Y(fn(S)); if (px) ctx.lineTo(m.l + px, yy); else ctx.moveTo(m.l + px, yy); }
+      ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([]);
+    });
+    curve(() => rn, P.col('--c-read'), [4, 3], 1.5);
+    curve(S => Math.sqrt(S), P.col('--text-muted'), [4, 3], 1.5);
+    curve(S => Math.sqrt(S + rn * rn), P.col('--text-muted'), [], 1.5);
+    ctx.font = FONT;
+    // Operating points of the current plan, labelled in two rows above the plot.
+    [['Sky', sim.bg, 1], ['Target', sim.bg + sim.peak, 0], ['Full well', fw, 1]].forEach(([name, v, rowIdx]) => {
+      if (!(v >= xd[0] && v <= xd[1])) return;
+      const x = Math.round(X(v)) + 0.5;
+      ctx.strokeStyle = P.col('--axis'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, m.t - (rowIdx ? 1 : 12)); ctx.lineTo(x, m.t + ph); ctx.stroke();
+      ctx.fillStyle = P.col('--text-secondary'); ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = name === 'Target' ? 'left' : name === 'Sky' ? 'right' : 'center';
+      ctx.fillText(name, Math.max(m.l + 10, Math.min(m.l + pw - 18, x + (name === 'Target' ? 3 : name === 'Sky' ? -3 : 0))), m.t - (rowIdx ? 3 : 13));
+    });
+    const LEVELS = 30;
+    for (let i = 0; i < LEVELS; i++) {
+      const S = Math.pow(10, Math.log10(xd[0]) + (i + 0.5) / LEVELS * Math.log10(xd[1] / xd[0]));
+      const sd = moments(samplePixel(c.sen, S, 1, 400, seed + 61 * i)).sd;
+      const below = !(sd >= yd[0]);                        // clipped at full well: the noise collapses
+      ctx.beginPath(); ctx.arc(X(S), below ? m.t + ph - 3 : Y(sd), 3, 0, 2 * Math.PI);
+      if (below) { ctx.strokeStyle = P.col('--c-metric'); ctx.lineWidth = 1.5; ctx.stroke(); }
+      else { ctx.fillStyle = P.col('--c-metric'); ctx.fill(); ctx.strokeStyle = P.col('--surface'); ctx.lineWidth = 1; ctx.stroke(); }
+    }
   }
 
   function sortOrder(row, key) {
@@ -492,5 +699,6 @@
     return { m, bw, order, pw, ph };
   }
 
-  window.Sim = { W, H, STARS, KEYS, LABELS, COLOR_VARS, generate, stretcher, drawPatch, drawHist, drawSection };
+  window.Sim = { W, H, STARS, KEYS, LABELS, COLOR_VARS, generate, stretcher, drawPatch, drawHist, drawSection,
+    samplePixel, moments, measuredNoise, subSteps, extraFrame, drawDist, distDomain, drawNoiseVsSubs, drawPtc };
 })();

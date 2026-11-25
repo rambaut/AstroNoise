@@ -64,6 +64,15 @@
             <option value="total">Measured value</option>
           </select>
         </label>
+        <label>Side plots
+          <select id="sim-side">
+            <option value="hist">Stretch curve and histogram</option>
+            <option value="dist">Sky and target distributions</option>
+            <!-- Disabled for now; the plots are still in js/sim.js. Restore this option and add 'noise' to CHOICES.simSide in js/app.js.
+            <option value="noise">Noise against subs, photon transfer</option> -->
+            <option value="build">Stack building up</option>
+          </select>
+        </label>
         <label><input type="checkbox" id="sim-stars"> Add stars (magnitude 8 to 18)</label>
         <button id="sim-resample" type="button">New random draw</button>
       </div>
@@ -72,19 +81,21 @@
         <div class="sim-chart"><canvas id="sim-canvas"></canvas><div class="tooltip" id="sim-tip" hidden></div></div>
         <div class="side">
           <div class="plots">
-            <figure><canvas id="curve-canvas" role="img" aria-label="Stretch curve applied to the single sub and to the stack"></canvas>
-              <figcaption>Stretch curve: stretched brightness out (0 to 1) for each linear brightness in.
-              <span class="key"><i style="background:var(--c-stretch)"></i>Single sub</span>
-              <span class="key"><i style="background:var(--c-metric)"></i>Stack</span></figcaption></figure>
-            <figure class="hist"><canvas id="hist-canvas" role="img" aria-label="Histogram of pixel values in the single sub and in the stack"></canvas>
-            <figcaption>Histogram of image brightness (number of pixels, log scale).
-              <span class="key"><i style="background:var(--c-stretch)"></i>Single sub</span>
-              <span class="key"><i style="background:var(--c-metric)"></i>Stack</span>
-              <span class="checks"><label><input type="checkbox" id="hist-zoom"> Zoom</label> <label><input type="checkbox" id="hist-log"> Log</label></span></figcaption></figure>
+            <figure><canvas id="curve-canvas" role="img" tabindex="0" aria-describedby="tip-a"></canvas><div class="tooltip side-tip" id="tip-a" role="tooltip"></div><figcaption id="cap-a"></figcaption></figure>
+            <figure><canvas id="hist-canvas" role="img" tabindex="0" aria-describedby="tip-b"></canvas><div class="tooltip side-tip" id="tip-b" role="tooltip"></div><figcaption id="cap-b"></figcaption>
+              <div class="checks" id="hist-opts"><label><input type="checkbox" id="hist-zoom"> Zoom</label> <label><input type="checkbox" id="hist-log"> Log</label></div></figure>
           </div>
           <div class="patches">
             <figure><div class="patch"><canvas id="patch-single"></canvas></div><figcaption id="cap-single"></figcaption></figure>
             <figure><div class="patch"><canvas id="patch-stack"></canvas></div><figcaption id="cap-stack"></figcaption></figure>
+          </div>
+          <div class="build" id="build" hidden>
+            <figure><div class="patch"><canvas id="build-0"></canvas></div><figcaption id="cap-build-0"></figcaption></figure>
+            <figure><div class="patch"><canvas id="build-1"></canvas></div><figcaption id="cap-build-1"></figcaption></figure>
+            <figure><div class="patch"><canvas id="build-2"></canvas></div><figcaption id="cap-build-2"></figcaption></figure>
+            <figure><div class="patch"><canvas id="build-3"></canvas></div><figcaption id="cap-build-3"></figcaption></figure>
+            <figure><div class="patch"><canvas id="build-4"></canvas></div><figcaption id="cap-build-4"></figcaption></figure>
+            <figure><div class="patch"><canvas id="build-5"></canvas></div><figcaption id="cap-build-5"></figcaption></figure>
           </div>
         </div>
       </div>

@@ -207,6 +207,14 @@ main { padding: 16px 20px 40px; display: grid; gap: 16px; min-width: 0; }
 .side .checks { display: flex; gap: 14px; margin-top: 4px; color: var(--text-primary); }
 .side .key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
 .patches { display: grid; gap: 12px; }
+/* Image patches sit next to the cross-section, with the side plots to their right. */
+.side .plots { order: 2; }
+/* Two columns of three, reading down the first column and then the second. */
+.build { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); grid-auto-flow: column; gap: 12px 20px; }
+.build figure { margin: 0; }
+.build figcaption { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+.build .patch::before, .build .patch::after { display: none; }
+.side .plots .checks { font-size: 12.5px; }
 .patches figure { margin: 0; }
 .patch { position: relative; line-height: 0; }
 .patch canvas { width: 100%; image-rendering: pixelated; border-radius: 4px; }
@@ -303,3 +311,13 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 @media (max-width: 1500px) and (min-width: 1101px) { .sim { grid-template-columns: minmax(0, 1fr) 440px; } }
 @media (max-width: 560px) { .side { grid-template-columns: minmax(0, 1fr); } }
+
+/* Side plots: a short title under each, with the explanation and colour key in a pop-up on hover or focus. */
+.plots figure { position: relative; }
+.plots figcaption { font-weight: 600; }
+.side-tip { display: none; right: calc(100% + 10px); top: 0; width: 270px; white-space: normal; padding: 10px 12px; font-size: 12.5px; z-index: 15; }
+.plots canvas:hover ~ .side-tip, .plots canvas:focus-visible ~ .side-tip { display: block; }
+.side-tip p { margin: 0 0 6px; color: var(--text-secondary); }
+.side-tip p b { color: var(--text-primary); font-weight: 600; }
+.side-tip .keys { display: flex; flex-wrap: wrap; gap: 2px 4px; }
+@media (max-width: 560px) { .side-tip { right: auto; left: 0; top: auto; bottom: calc(100% + 6px); } }

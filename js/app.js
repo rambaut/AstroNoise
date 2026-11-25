@@ -40,7 +40,7 @@
     sub: 120, plan: 'n', n: 60, totalInt: 2, totalSession: 2.17,
     ditherTime: 10, swamp: 5,
     simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, lossOn: true, lossTime: 30, recDrOn: true, recDrMin: 9, recStarOn: false, recStarMag: 12,
-    simHistZoom: false, simHistLog: false, seeing: 2.5
+    simSide: 'hist', simHistZoom: false, simHistLog: false, seeing: 2.5
   };
 
   let state = Object.assign({}, DEFAULTS);
@@ -105,6 +105,11 @@
       <p><b>Frame.</b> A single sub, or the mean of all the subs in the plan: averaging N subs shrinks every noise term by √N while the signal stays put.</p>
       <p><b>Sort.</b> Re-orders the pixels by one source so its distribution can be compared with the others.</p>
       <p>The two images are stretched from just below the background to just above the target peak.</p>
+      <p><b>Side plots.</b> The selector chooses what is shown beside the cross-section. Apart from the stretch curve and histogram, these use fresh random samples of a single pixel, not the pixels of the patch.</p>
+      <p><b>Sky and target distributions.</b> The values that a pure-sky pixel and the pixel at the target peak take over many repeats, with the expected bell curves drawn over the sampled histograms. The distance between the two peaks, measured in widths of the curves, is the SNR. In one sub the curves usually overlap almost completely; in the stack, on the same scale, each has narrowed by √N and they separate.</p>
+      <p><b>Noise against subs.</b> The background noise measured in simulated stacks of increasing size, against the 1/√N line that theory predicts. Each halving of the noise costs four times as many subs.</p>
+      <p><b>Photon transfer curve.</b> The noise of a single sub against the signal it collects, on log axes, at the current gain. At the left the noise is flat at the read noise; then it follows the square root of the signal (shot noise, a slope of one half); at full well the pixel clips and the measured noise collapses. The markers show where the sky background and the target peak sit, and so which regime the plan is working in.</p>
+      <p><b>Stack building up.</b> Six patches from one sub up to the full stack, with the measured background noise under each. Each patch is an independent random draw, not the same subs accumulating.</p>
       <p><b>Stretch curve.</b> Above the histogram, the stretch applied to each image in the Stretched view: linear brightness in along the bottom, stretched brightness out up the side. Each image has its own curve because the black point depends on its noise. The curve follows the Zoom and Log settings of the histogram, so in the linear views the two plots share one brightness axis.</p>
       <p><b>Histogram.</b> Beside the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
     recommend: `<h4>Recommended plan</h4>
@@ -337,7 +342,8 @@
   }
 
   // ---------- settings files ----------
-  const CHOICES = { simFrame: ['single', 'stack'], simView: ['raw', 'cal', 'str'], simSort: ['pos', 'signal', 'tgt', 'star', 'sky', 'dark', 'read', 'total'] };
+  const CHOICES = { simFrame: ['single', 'stack'], simView: ['raw', 'cal', 'str'], simSort: ['pos', 'signal', 'tgt', 'star', 'sky', 'dark', 'read', 'total'],
+    simSide: ['hist', 'dist', /* 'noise', */ 'build'] };   // 'noise' is switched off: see the commented-out option in index.html
 
   /** Replace the state with settings read from a file. Unknown keys and invalid values are ignored. */
   function applySettings(data) {
@@ -719,11 +725,65 @@
         ['Measured value' + (cal ? ' (sky subtracted)' : ''), '--text-primary', 'line']
       ], cal ? [['Expected signal', '--c-expected', 'line']] : [], clipped));
     }
-    Sim.drawPatch($('patch-single'), simData, simData.single, str);
-    Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
-        $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
-    Sim.drawHist($('hist-canvas'), simData, str, state.simHistZoom, state.simHistLog);
-    Sim.drawHist($('curve-canvas'), simData, false, state.simHistZoom, state.simHistLog, true);
+    const side = CHOICES.simSide.includes(state.simSide) ? state.simSide : 'hist';
+    $('sim-side').value = side;
+    const build = side === 'build';
+    document.querySelector('.side .plots').hidden = build;
+    document.querySelector('.side .patches').hidden = build;
+    $('build').hidden = !build;
+    $('hist-opts').hidden = side !== 'hist';
+    const key = (v, name) => `<span class="key"><i style="background:var(${v})"></i>${name}</span>`;
+    const A = $('curve-canvas'), B = $('hist-canvas');
+    if (build) {
+      const steps = Sim.subSteps(p.n, 6);
+      for (let k = 0; k < 6; k++) {
+        const fig = $('build-' + k).closest('figure');
+        fig.hidden = k >= steps.length;
+        if (fig.hidden) continue;
+        const n = steps[k];
+        Sim.drawPatch($('build-' + k), simData, Sim.extraFrame(c, p, simData, n, seed), str);
+        $('cap-build-' + k).textContent = `${n.toLocaleString('en-US')} ${n === 1 ? 'sub' : 'subs'} · noise ${fmtE(Sim.measuredNoise(c, simData, n, seed))} e⁻`;
+      }
+    } else {
+      Sim.drawPatch($('patch-single'), simData, simData.single, str);
+      Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
+    }
+    // Each side plot has a short title under it; the explanation and colour key pop up on hover or focus.
+    const describe = (slot, title, body, keys) => {
+      $('cap-' + slot).textContent = title;
+      $('tip-' + slot).innerHTML = `<div class="head">${title}</div>${body.map(t => `<p>${t}</p>`).join('')}<div class="keys">${keys}</div>`;
+      (slot === 'a' ? A : B).setAttribute('aria-label', title);
+    };
+    if (side === 'hist') {
+      $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
+      Sim.drawHist(B, simData, str, state.simHistZoom, state.simHistLog);
+      Sim.drawHist(A, simData, false, state.simHistZoom, state.simHistLog, true);
+      const keys = key('--c-stretch', 'Single sub') + key('--c-metric', 'Stack');
+      describe('a', 'Stretch curve', ['Linear brightness in along the bottom, stretched brightness out (0 to 1) up the side, with one curve for each image.',
+        'Each image gets its own stretch, because the black point depends on its noise. The stack\'s curve rises sooner and more steeply than the single sub\'s.',
+        'The plot follows the Zoom and Log settings of the histogram below.'], keys);
+      describe('b', 'Histogram', [`The number of pixels (log scale) at each brightness, counted over every pixel of each image patch. Brightness is ${str ? 'the stretched value' : 'the pixel value as a fraction of full well'}.`,
+        'Pixels clipped to black pile up at 0 and saturated pixels at 1.',
+        '<b>Zoom</b> narrows the axis to the range of values present. <b>Log</b> puts brightness on a log scale, which leaves out pixels at exactly zero.'], keys);
+    } else if (side === 'dist') {
+      const dom = Sim.distDomain(c, simData), keys = key('--c-sky', 'Sky pixel') + key('--c-target', 'Target peak');
+      Sim.drawDist(A, c, simData, 1, dom, seed);
+      Sim.drawDist(B, c, simData, p.n, dom, seed);
+      const sat = c.st.saturated, subs = p.n.toLocaleString('en-US');
+      describe('a', 'Single sub: sky and target', ['The values a sky pixel and the target-peak pixel take over 4,000 repeats of one sub, with the expected bell curves drawn over them.',
+        `The peaks are <b>${sat ? '—' : c.st.snrSub.toFixed(2)}</b> noise widths apart. That separation is the SNR.`], keys);
+      describe('b', `Mean of ${subs} subs: sky and target`, [`The same two pixels in the mean of ${subs} subs, on the same scale as the plot above. Each curve has narrowed by √N.`,
+        `The peaks are now <b>${sat ? '—' : c.st.snr.toFixed(1)}</b> noise widths apart.`], keys);
+    } else if (side === 'noise') {
+      Sim.drawNoiseVsSubs(A, c, simData, p, seed);
+      Sim.drawPtc(B, c, simData, seed);
+      describe('a', 'Noise against subs', ['Background noise (e⁻, log scale) measured in simulated stacks of increasing size, plotted over the 1/√N line that theory predicts.',
+        'Each halving of the noise costs four times as many subs.'], key('--c-metric', 'Measured') + key('--text-muted', 'Theory'));
+      describe('b', 'Photon transfer curve', [`Single-sub noise against signal (both in e⁻, log axes) at gain ${p.gain}.`,
+        'From the left: the flat read-noise floor, then the √signal rise of shot noise, then open circles where the pixel clips at full well and the noise collapses.',
+        'The markers show where the sky background and the target peak sit, and so which regime the plan is working in.'],
+        key('--c-metric', 'Measured') + key('--c-read', 'Read-noise floor (dashed)') + key('--text-muted', '√signal (dashed) and total'));
+    }
     $('cap-single').textContent = `Single ${fmtSub(p.sub)} sub · peak SNR ${c.st.snrSub.toFixed(2)}`;
     $('cap-stack').textContent = `Mean of ${p.n} subs (${fmtDur(c.integration)}) · peak SNR ${c.st.snr.toFixed(1)}`;
   }
@@ -781,6 +841,7 @@
     $('hist-log').addEventListener('change', e => { state.simHistLog = e.target.checked; schedule(); });
     $('sim-stars').addEventListener('change', e => { state.simStars = e.target.checked; schedule(); });
     $('sim-sort').addEventListener('change', e => { state.simSort = e.target.value; schedule(); });
+    $('sim-side').addEventListener('change', e => { state.simSide = e.target.value; schedule(); });
     $('sim-resample').addEventListener('click', () => { seed = (Math.random() * 1e9) | 0; schedule(); });
     $('sim-canvas').addEventListener('pointermove', simHover);
     $('sim-canvas').addEventListener('pointerleave', () => { $('sim-tip').hidden = true; });
