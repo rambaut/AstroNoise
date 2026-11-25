@@ -56,6 +56,9 @@
   // A stored or URL-supplied brightness that no longer matches the named target makes it a custom one.
   (function () {
     const t = TARGETS.find(x => x[0] === state.tgtId);
+    const h = new URLSearchParams(location.hash.slice(1));
+    // A target named in the URL sets its own brightness and spectrum unless the URL gives those too.
+    if (t && h.has('tgtId')) { if (!h.has('tgtMag')) state.tgtMag = t[2]; if (!h.has('tgtType')) state.tgtType = t[3]; }
     if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
   })();
   let seed = 12345;
@@ -143,7 +146,8 @@
       <p>The sky is treated as a flat spectrum, so the sky electron rate scales with the filter bandwidth. Narrowband filters cut sky glow by the ratio of the bandwidths.</p>
       <p><b>Allowed read-noise penalty</b> defines "sky-limited": the sub length at which read noise adds this percentage to the background noise.</p>`,
     target: `<h4>Target</h4>
-      <p>A Gaussian patch of light with the given peak surface brightness and full width at half maximum. All SNR figures refer to the pixel at its peak.</p>
+      <p>A Gaussian patch of light with the given peak surface brightness and a fixed width of ${TGT_FWHM}″ (full width at half maximum). All SNR figures refer to the pixel at its peak, so the width only changes how the simulated picture looks.</p>
+      <p><b>Object</b> offers common targets with a representative peak surface brightness (in brackets, mag/″²) and spectrum. These are approximate figures for the named part of each object; real objects vary a great deal across their extent. Changing the brightness or spectrum by hand switches the object to Custom.</p>
       <p><b>Continuum</b> targets (galaxies, reflection nebulae, star clusters) emit across the spectrum, so a narrower filter passes proportionally less of their light.</p>
       <p><b>Emission-line</b> targets are given as the V-band-equivalent brightness of the line, and keep that flux through any filter that contains the line. This is why narrowband filters work so well on them under bright skies.</p>`
   };
@@ -252,7 +256,8 @@
         w.className = 'field'; w.id = 'w-' + f.key;
         let h = `<label for="f-${f.key}">${f.label}</label>`;
         if (f.kind === 'select') {
-          h += `<select id="f-${f.key}">${f.options.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+          const opts = list => list.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('');
+          h += `<select id="f-${f.key}">${f.groups ? f.groups.map(g => `<optgroup label="${g[0]}">${opts(g[1])}</optgroup>`).join('') : opts(f.options)}</select>`;
         } else {
           h += `<span class="num"><input type="number" id="f-${f.key}" min="${f.min}" max="${f.max}" step="${f.log ? 'any' : f.step}">${f.unit || ''}</span>`;
           if (f.kind === 'range') {
