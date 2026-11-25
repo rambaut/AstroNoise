@@ -22,6 +22,8 @@
     <p>Signal, noise and dynamic range in long-exposure astrophotography with CMOS cameras</p>
   </div>
   <div class="top-actions">
+    <button id="save-open" type="button">Save settings…</button>
+    <button id="load-open" type="button">Load settings…</button>
     <button id="reset" type="button">Reset</button>
     <button id="theme" type="button" aria-label="Switch between light and dark theme">Light / dark</button>
   </div>
@@ -71,6 +73,11 @@
         <div class="patches">
           <figure><div class="patch"><canvas id="patch-single"></canvas></div><figcaption id="cap-single"></figcaption></figure>
           <figure><div class="patch"><canvas id="patch-stack"></canvas></div><figcaption id="cap-stack"></figcaption></figure>
+          <figure class="hist"><canvas id="hist-canvas" role="img" aria-label="Histogram of pixel values in the single sub and in the stack"></canvas>
+            <figcaption>Histogram of image brightness (number of pixels, log scale).
+              <span class="key"><i style="background:var(--c-stretch)"></i>Single sub</span>
+              <span class="key"><i style="background:var(--c-metric)"></i>Stack</span>
+              <span class="checks"><label><input type="checkbox" id="hist-zoom"> Zoom</label> <label><input type="checkbox" id="hist-log"> Log</label></span></figcaption></figure>
         </div>
       </div>
     </section>
@@ -130,9 +137,36 @@
       Dynamic range is log₂ of the headroom left above the background divided by the background noise. Calibration frames are assumed noiseless.</p>
       <p><strong>Camera data.</strong> Preset values are approximate transcriptions of published ZWO specifications and gain curves.
       Check them against the data sheet for your camera; every value can be overridden in the Camera panel.</p>
+      <p><strong>Licence.</strong> Open source under the <a href="LICENSE">MIT License</a>.</p>
     </footer>
   </main>
 </div>
+
+<dialog id="save-dlg" aria-labelledby="save-title">
+  <form method="dialog" id="save-form">
+    <h2 id="save-title">Save settings</h2>
+    <p>Downloads the current setup as a JSON file.</p>
+    <label for="save-name">File name</label>
+    <div class="name-row"><input type="text" id="save-name" autocomplete="off" spellcheck="false" required><span>.json</span></div>
+    <div class="dlg-actions">
+      <button type="button" id="save-cancel">Cancel</button>
+      <button type="submit" class="primary">Download</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="load-dlg" aria-labelledby="load-title">
+  <h2 id="load-title">Load settings</h2>
+  <p>Replaces the current setup with one saved from this page.</p>
+  <div id="drop" class="drop">
+    <p>Drag a settings file here</p>
+    <p class="or">or</p>
+    <button type="button" id="load-pick">Choose a file…</button>
+    <input type="file" id="load-file" accept=".json,application/json" hidden>
+  </div>
+  <p id="load-error" class="dlg-error" role="alert" hidden></p>
+  <div class="dlg-actions"><button type="button" id="load-cancel">Cancel</button></div>
+</dialog>
 
 <script src="js/cameras.js"></script>
 <script src="js/model.js"></script>

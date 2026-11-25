@@ -144,12 +144,98 @@
     const hi = sim.bg + Math.max(sim.peak + 3 * f.sd, 5 * f.sd);
     const st = stretched ? stretcher(sim, f) : null;
     for (let i = 0; i < W * H; i++) {
-      const v = st ? st(f.img[i]) : Math.pow(Math.max(0, Math.min(1, (f.img[i] - lo) / (hi - lo))), 1 / 2.2);
+      const v = st ? st(f.img[i]) : f.img[i] >= sim.fullWell ? 1 : Math.pow(Math.max(0, Math.min(1, (f.img[i] - lo) / (hi - lo))), 1 / 2.2);
       const g = Math.round(255 * v);
       id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = g;
       id.data[i * 4 + 3] = 255;
     }
     ctx.putImageData(id, 0, 0);
+  }
+
+  /**
+   * Histogram of image brightness for both patches: number of pixels (log scale) against brightness
+   * on a 0..1 scale. Brightness is the pixel value as a fraction of full well (or its stretched value),
+   * so pixels clipped at black pile up at 0 and saturated ones at 1. `zoom` narrows the axis to the
+   * range of values present; `log` puts brightness on a log scale, which leaves out pixels at zero.
+   */
+  function drawHist(canvas, sim, stretched, zoom, log) {
+    const css = getComputedStyle(canvas);
+    const col = name => css.getPropertyValue(name).trim();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cw, ch);
+    const m = { l: 30, r: 12, t: 6, b: 30 };
+    const pw = cw - m.l - m.r, ph = ch - m.t - m.b;
+    const BINS = Math.max(16, Math.min(128, Math.floor(pw / 2)));
+    const frames = [sim.single, sim.stack].map(f => {
+      const st = stretched ? stretcher(sim, f) : null, b = new Float64Array(f.img.length);
+      for (let i = 0; i < b.length; i++) b[i] = st ? st(f.img[i]) : Math.max(0, Math.min(1, f.img[i] / sim.fullWell));
+      return b;
+    });
+    // Axis range: 0..1, or the range of the data when zoomed. A log axis starts at the smallest value above zero.
+    let min = Infinity, minPos = Infinity, max = 0;
+    frames.forEach(b => { for (let i = 0; i < b.length; i++) { const v = b[i]; if (v < min) min = v; if (v > max) max = v; if (v > 0 && v < minPos) minPos = v; } });
+    if (!isFinite(minPos)) minPos = 1e-6;
+    let lo = log ? minPos : zoom ? min : 0, hi = zoom ? max : 1;
+    if (log) { lo = Math.log10(lo); hi = Math.log10(Math.max(hi, minPos)); }
+    if (hi - lo < 1e-9) { lo -= log ? 0.05 : 0.005; hi += log ? 0.05 : 0.005; }
+    const pos = v => ((log ? Math.log10(v) : v) - lo) / (hi - lo);        // 0..1 along the axis
+    const count = b => {
+      const h = new Array(BINS).fill(0);
+      for (let i = 0; i < b.length; i++) {
+        if (log && b[i] <= 0) continue;
+        const t = pos(b[i]);
+        if (t < -1e-9 || t > 1 + 1e-9) continue;
+        h[Math.max(0, Math.min(BINS - 1, Math.floor(t * BINS)))]++;
+      }
+      return h;
+    };
+    const total = W * H, top = Math.log10(total);
+    const y = n => m.t + ph - (n < 1 ? 0 : (Math.log10(n) + 0.15) / (top + 0.15)) * ph;
+    const bw = pw / BINS;
+
+    ctx.font = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    for (let p = 0; Math.pow(10, p) <= total; p++) {
+      const n = Math.pow(10, p), yy = Math.round(y(n)) + 0.5;
+      ctx.strokeStyle = col('--grid'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(m.l, yy); ctx.lineTo(m.l + pw, yy); ctx.stroke();
+      ctx.fillStyle = col('--text-muted');
+      ctx.fillText(n >= 1000 ? n / 1000 + 'k' : String(n), m.l - 4, yy);
+    }
+    const series = (h, color, fillAlpha) => {
+      ctx.beginPath(); ctx.moveTo(m.l, m.t + ph);
+      h.forEach((n, k) => { ctx.lineTo(m.l + k * bw, y(n)); ctx.lineTo(m.l + (k + 1) * bw, y(n)); });
+      ctx.lineTo(m.l + pw, m.t + ph); ctx.closePath();
+      ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.lineJoin = 'round'; ctx.stroke();
+    };
+    series(count(frames[0]), col('--c-stretch'), 0.3);
+    series(count(frames[1]), col('--c-metric'), 0.3);
+
+    ctx.strokeStyle = col('--axis'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(m.l, m.t + ph + 0.5); ctx.lineTo(m.l + pw, m.t + ph + 0.5); ctx.stroke();
+    ctx.fillStyle = col('--text-muted'); ctx.textBaseline = 'top';
+    const fmt = v => v === 0 ? '0' : Math.abs(v) < 1e-4 ? v.toExponential(0).replace('e-', 'e−') : String(+v.toPrecision(2));
+    const val = t => { const x = lo + t * (hi - lo); return log ? Math.pow(10, x) : x; };
+    let ticks = [0, 0.25, 0.5, 0.75, 1];
+    if (log) {
+      // The two ends, plus whole decades that are not crowded against them.
+      ticks = [0, 1];
+      for (let d = Math.ceil(lo); d <= Math.floor(hi); d++) { const t = (d - lo) / (hi - lo); if (t > 0.18 && t < 0.82) ticks.push(t); }
+      if (ticks.length === 2) ticks.push(0.5);
+    }
+    ticks.forEach(t => {
+      const x = m.l + t * pw;
+      ctx.textAlign = t === 0 ? 'left' : t === 1 ? 'right' : 'center';
+      ctx.fillText(fmt(val(t)), t === 1 ? x + 8 : x, m.t + ph + 4);
+      ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, m.t + ph); ctx.lineTo(Math.round(x) + 0.5, m.t + ph + 3); ctx.stroke();
+    });
+    ctx.textAlign = 'center';
+    ctx.fillText((stretched ? 'Stretched brightness' : 'Brightness') + ' (1 = full well' + (log ? ', log scale)' : ')'), m.l + pw / 2, m.t + ph + 17);
   }
 
   function sortOrder(row, key) {
@@ -390,5 +476,5 @@
     return { m, bw, order, pw, ph };
   }
 
-  window.Sim = { W, H, STARS, KEYS, LABELS, COLOR_VARS, generate, stretcher, drawPatch, drawSection };
+  window.Sim = { W, H, STARS, KEYS, LABELS, COLOR_VARS, generate, stretcher, drawPatch, drawHist, drawSection };
 })();

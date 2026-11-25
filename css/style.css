@@ -197,7 +197,11 @@ main { padding: 16px 20px 40px; display: grid; gap: 16px; min-width: 0; }
 .seg button[aria-pressed="true"] { background: var(--wash); color: var(--text-primary); font-weight: 600; }
 .sim { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 18px; align-items: start; }
 .sim-chart { position: relative; min-width: 0; }
-#sim-canvas { display: block; width: 100%; height: 340px; }
+#sim-canvas { display: block; width: 100%; height: 453px; }
+#hist-canvas { display: block; width: 100%; height: 118px; }
+.patches .key { white-space: nowrap; margin-right: 8px; color: var(--text-primary); }
+.patches .checks { display: flex; gap: 14px; margin-top: 4px; color: var(--text-primary); }
+.patches .key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
 .patches { display: grid; gap: 12px; }
 .patches figure { margin: 0; }
 .patch { position: relative; line-height: 0; }
@@ -217,6 +221,7 @@ footer strong { color: var(--text-secondary); font-weight: 600; }
   .two { grid-template-columns: minmax(0, 1fr); }
   .sim { grid-template-columns: minmax(0, 1fr); }
   .patches { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 10px; }
+  .patches figure.hist { grid-column: 1 / -1; }
 }
 @media (max-width: 820px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
@@ -243,3 +248,31 @@ button.info:hover, button.info[aria-expanded="true"] { background: var(--wash); 
 #info-pop p { margin: 0 0 8px; color: var(--text-secondary); }
 #info-pop p:last-child { margin-bottom: 0; }
 #info-pop b { color: var(--text-primary); font-weight: 600; }
+
+/* Save / load settings dialogs */
+dialog {
+  width: min(420px, calc(100vw - 32px)); padding: 18px 20px;
+  background: var(--surface); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { margin: 0 0 4px; font-size: 16px; }
+dialog p { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
+dialog label { display: block; font-size: 13px; margin-bottom: 4px; }
+.name-row { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.name-row input {
+  flex: 1; min-width: 0; font: inherit; color: inherit;
+  background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+}
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+button.primary { background: var(--c-target); border-color: var(--c-target); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--c-target); filter: brightness(1.1); }
+.drop {
+  display: grid; justify-items: center; gap: 6px; padding: 26px 16px;
+  border: 2px dashed var(--axis); border-radius: 10px; text-align: center;
+}
+.drop p { margin: 0; color: var(--text-primary); font-size: 14px; }
+.drop p.or { color: var(--text-muted); font-size: 12.5px; }
+.drop.over { border-color: var(--c-target); background: var(--wash); }
+.dlg-error { margin: 12px 0 0; color: var(--critical); }

@@ -41,7 +41,7 @@
     tgtId: 'm101', tgtMag: 23, tgtFwhm: 100, tgtType: 'cont',
     sub: 120, plan: 'n', n: 60, totalInt: 2, totalSession: 2.17,
     ditherTime: 10, swamp: 5,
-    simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, seeing: 2.5
+    simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, simHistZoom: false, simHistLog: false, seeing: 2.5
   };
 
   let state = Object.assign({}, DEFAULTS);
@@ -106,7 +106,8 @@
       <p><b>Stars.</b> Adds six stars, of magnitude 8 to 18 in steps of two, along the middle row. Each is a Gaussian disc whose width is the seeing set in the Sky panel. They show how quickly bright stars clip compared with the faint target.</p>
       <p><b>Frame.</b> A single sub, or the mean of all the subs in the plan: averaging N subs shrinks every noise term by √N while the signal stays put.</p>
       <p><b>Sort.</b> Re-orders the pixels by one source so its distribution can be compared with the others.</p>
-      <p>The two images are stretched from just below the background to just above the target peak.</p>`,
+      <p>The two images are stretched from just below the background to just above the target peak.</p>
+      <p><b>Histogram.</b> Below the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
     tradeoff: `<h4>Sub-exposure trade-off</h4>
       <p>The total wall-clock time is held at its current value while the sub length varies, so longer subs mean fewer of them.</p>
       <p><b>Stack SNR.</b> Signal ÷ noise at the target peak after stacking. Short subs lose out twice: read noise is paid once per sub, and each sub costs dither and settle time. The grey line is an ideal camera with no read noise, dark current or overhead. The curve stops at the "Well full" marker: in longer subs the target peak, with the sky and dark current under it, fills the well, so the pixel is clipped and has no meaningful SNR.</p>
@@ -307,6 +308,82 @@
     state.n = Math.max(1, Math.min(N_MAX, state.n));
     if (state.plan !== 'int') state.totalInt = state.n * state.sub / 3600;
     if (state.plan !== 'session') state.totalSession = state.n * per / 3600;
+  }
+
+  // ---------- settings files ----------
+  const CHOICES = { simFrame: ['single', 'stack'], simView: ['raw', 'cal', 'str'], simSort: ['pos', 'signal', 'tgt', 'star', 'sky', 'dark', 'read', 'total'] };
+
+  /** Replace the state with settings read from a file. Unknown keys and invalid values are ignored. */
+  function applySettings(data) {
+    const src = data && typeof data === 'object' && data.settings && typeof data.settings === 'object' ? data.settings : data;
+    if (!src || typeof src !== 'object' || Array.isArray(src)) throw new Error('This is not an AstroNoise settings file.');
+    const next = Object.assign({}, DEFAULTS);
+    let used = 0;
+    for (const k in DEFAULTS) {
+      if (!(k in src)) continue;
+      const v = src[k], f = FIELDS[k];
+      if (typeof v !== typeof DEFAULTS[k]) continue;
+      if (typeof v === 'number') {
+        if (!isFinite(v)) continue;
+        next[k] = f && k !== 'gain' ? Math.max(f.min, Math.min(f.max, f.int ? Math.round(v) : v)) : v;
+      } else if (typeof v === 'string') {
+        const allowed = CHOICES[k] || (f && (f.groups ? [].concat(...f.groups.map(g => g[1])) : f.options).map(o => o[0]));
+        if (allowed && !allowed.includes(v)) continue;
+        next[k] = v;
+      } else next[k] = v;
+      used++;
+    }
+    if (!used) throw new Error('No AstroNoise settings were found in this file.');
+    state = next;
+    state.gain = Math.max(0, Math.min(camera().gainMax, Math.round(state.gain)));
+    state.tgtFwhm = TGT_FWHM;
+    const t = TARGETS.find(x => x[0] === state.tgtId);
+    if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
+    reconcile(); syncControls(); schedule();
+  }
+
+  function initSettingsFiles() {
+    const saveDlg = $('save-dlg'), loadDlg = $('load-dlg'), name = $('save-name'), err = $('load-error'), drop = $('drop'), file = $('load-file');
+    $('save-open').addEventListener('click', () => {
+      name.value = 'astronoise-' + camera().id + '-' + new Date().toISOString().slice(0, 10);
+      saveDlg.showModal(); name.select();
+    });
+    $('save-cancel').addEventListener('click', () => saveDlg.close());
+    $('save-form').addEventListener('submit', () => {
+      // Keep the name safe for any file system, and add the extension.
+      const base = name.value.trim().replace(/\.json$/i, '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '-') || 'astronoise-settings';
+      const body = JSON.stringify({ app: 'AstroNoise', version: 1, saved: new Date().toISOString(), settings: state }, null, 2);
+      const url = URL.createObjectURL(new Blob([body + '\n'], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = base + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    const fail = msg => { err.textContent = msg; err.hidden = false; };
+    const read = f => {
+      if (!f) return;
+      err.hidden = true;
+      const reader = new FileReader();
+      reader.onerror = () => fail(`Could not read "${f.name}".`);
+      reader.onload = () => {
+        let data;
+        try { data = JSON.parse(reader.result); } catch (e) { fail(`"${f.name}" is not a valid JSON file.`); return; }
+        try { applySettings(data); loadDlg.close(); } catch (e) { fail(e.message); }
+      };
+      reader.readAsText(f);
+    };
+    $('load-open').addEventListener('click', () => { err.hidden = true; file.value = ''; loadDlg.showModal(); });
+    $('load-cancel').addEventListener('click', () => loadDlg.close());
+    $('load-pick').addEventListener('click', () => file.click());
+    file.addEventListener('change', () => read(file.files[0]));
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => read(e.dataTransfer.files[0]));
+    // A file dropped beside the zone must not navigate the browser away from the page.
+    ['dragover', 'drop'].forEach(ev => loadDlg.addEventListener(ev, e => e.preventDefault()));
+    // Clicking the backdrop closes either dialog.
+    [saveDlg, loadDlg].forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
   }
 
   function set(key, value) {
@@ -552,6 +629,8 @@
     }
     Sim.drawPatch($('patch-single'), simData, simData.single, str);
     Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
+    $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
+    Sim.drawHist($('hist-canvas'), simData, str, state.simHistZoom, state.simHistLog);
     $('cap-single').textContent = `Single ${fmtSub(p.sub)} sub · peak SNR ${c.st.snrSub.toFixed(2)}`;
     $('cap-stack').textContent = `Mean of ${p.n} subs (${fmtDur(c.integration)}) · peak SNR ${c.st.snr.toFixed(1)}`;
   }
@@ -605,6 +684,8 @@
     });
     seg('sim-frame', 'simFrame');
     seg('sim-view', 'simView');
+    $('hist-zoom').addEventListener('change', e => { state.simHistZoom = e.target.checked; schedule(); });
+    $('hist-log').addEventListener('change', e => { state.simHistLog = e.target.checked; schedule(); });
     $('sim-stars').addEventListener('change', e => { state.simStars = e.target.checked; schedule(); });
     $('sim-sort').addEventListener('change', e => { state.simSort = e.target.value; schedule(); });
     $('sim-resample').addEventListener('click', () => { seed = (Math.random() * 1e9) | 0; schedule(); });
@@ -617,6 +698,7 @@
       try { localStorage.setItem('astronoise.theme', t); } catch (e) { /* ignore */ }
       schedule();
     });
+    initSettingsFiles();
     $('reset').addEventListener('click', () => {
       state = Object.assign({}, DEFAULTS);
       reconcile(); syncControls(); schedule();
