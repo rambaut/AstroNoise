@@ -55,6 +55,25 @@ rate = F0 × A × (pixel scale)² × QE × throughput × 10^(−0.4 μ) × bandw
 - **Emission-line targets.** Their brightness is given as a V-band equivalent, so the rate uses a fixed 88 nm, the approximate width of the V band [3], whatever filter is fitted. This is a simplification: it assumes the filter contains the line and passes it in full.
 - **Stars.** A star of magnitude `m` gives `F0 × A × QE × throughput × bandwidth × 10^(−0.4 m)` electrons per second in total, spread over a Gaussian seeing disc. A Gaussian is a convenient approximation; real stellar profiles have broader wings and are better described by a Moffat function [4].
 
+### Filters
+
+Filters are modelled by their bandwidth only. The model has no actual wavelengths.
+
+- **Sky glow** is treated as a flat spectrum, so its rate is proportional to the filter bandwidth. A 7 nm filter passes 7/300 of what a 300 nm luminance filter passes.
+- **Emission-line targets** keep a fixed flux whatever filter is fitted. This assumes the filter is centred on the line and passes all of it.
+- **Continuum targets** scale with bandwidth, just as the sky does.
+
+For an emission nebula, going from luminance to a 7 nm filter therefore leaves the signal unchanged and cuts the sky about 43-fold. For a continuum target such as a galaxy it cuts signal and sky equally, and SNR falls because read noise and dark current then matter more.
+
+What this leaves out:
+
+- **Filter transmission.** Every filter passes 100% of the light in its band. Real narrowband filters peak at around 90%, and often less for the narrowest.
+- **Quantum efficiency at the line's wavelength.** The camera's peak QE is used throughout, so a line such as Hα at 656 nm, where most sensors are below their peak, comes out too bright.
+- **Structure in the sky spectrum.** Real sky glow has lines of its own (airglow, sodium and mercury lamps), and LED lighting is not flat. A filter that sits on or off one of these behaves differently from the flat assumption.
+- **Whether the filter contains the line.** An emission-line target keeps its full flux through any filter, including "R, G or B". That is only right for the one colour filter that covers the line.
+- **Colour cameras with narrowband filters.** The Bayer matrix only limits the bandwidth to 100 nm. Only one pixel in four (red) records Hα, which is not modelled, so narrowband SNR for colour cameras is optimistic.
+- **Mixed targets.** A target is either pure continuum or pure emission line, never both.
+
 ### Sky brightness
 
 The sky can be entered as a measured value in magnitudes per square arcsecond, such as a Sky Quality Meter reading, or as a Bortle class [5]. The Bortle scale is defined by visual criteria, not by a measured brightness, so the conversion used here is only a typical one:
