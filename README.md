@@ -40,7 +40,7 @@ All quantities are electrons per pixel unless stated otherwise. Numbers in squar
 
 - Aperture: `D = focal length / focal ratio`.
 - Collecting area: `A = (π/4) D² (1 − o²)`, where `o` is the central obstruction as a fraction of the aperture diameter.
-- Pixel scale: `206.265 × pixel size (µm) / focal length (mm)` arcseconds per pixel. This is the small-angle approximation, 206,265 being the number of arcseconds in a radian.
+- Pixel scale: `206.265 × pixel size (µm) / focal length (mm)` arcseconds per pixel. This is the small-angle approximation, 206.265 being the number of arcseconds in a radian.
 
 ### Photon rates
 
