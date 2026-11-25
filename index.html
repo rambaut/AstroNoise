@@ -77,6 +77,7 @@
             <figcaption>Histogram of image brightness (number of pixels, log scale).
               <span class="key"><i style="background:var(--c-stretch)"></i>Single sub</span>
               <span class="key"><i style="background:var(--c-metric)"></i>Stack</span>
+              <span id="hist-curve-key">Dashed: stretch curve for each image, from 0 at the bottom to 1 at the top.</span>
               <span class="checks"><label><input type="checkbox" id="hist-zoom"> Zoom</label> <label><input type="checkbox" id="hist-log"> Log</label></span></figcaption></figure>
         </div>
       </div>
@@ -84,6 +85,14 @@
 
     <section class="tiles" id="tiles" aria-label="Summary"></section>
     <div id="alerts"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-info="recommend">Recommended plan</h2>
+        <p id="recommend-sub"></p>
+      </div>
+      <div id="recommend"></div>
+    </section>
 
     <section class="card">
       <div class="card-head">

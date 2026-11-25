@@ -276,3 +276,24 @@ button.primary:hover { background: var(--c-target); filter: brightness(1.1); }
 .drop p.or { color: var(--text-muted); font-size: 12.5px; }
 .drop.over { border-color: var(--c-target); background: var(--wash); }
 .dlg-error { margin: 12px 0 0; color: var(--critical); }
+
+/* Recommended plan */
+.field.check > label { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; color: var(--text-primary); margin-top: 4px; }
+.field.check input { accent-color: var(--c-metric); margin: 0; }
+.rec-main { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.rec-plan { font-size: 22px; font-weight: 400; }
+.rec-plan b { font-weight: 700; }
+.rec-note { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+.rec-note b { color: var(--text-primary); }
+.rec-main button { padding: 6px 18px; }
+button:disabled { opacity: 0.45; cursor: default; }
+.rec-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 18px; margin: 14px 0 4px; }
+.rec-facts dt { color: var(--text-muted); font-size: 12px; }
+.rec-facts dd { margin: 2px 0 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rec-table td:first-child { display: table-cell; }
+.rec-table td.none { text-align: left; color: var(--text-secondary); }
+.rec-table button { padding: 1px 10px; font-size: 12.5px; }
+.tag { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+.tag.best { color: var(--text-primary); border-color: var(--text-muted); font-weight: 600; }
+.rec-limits { color: var(--text-muted); font-size: 12px; margin: 8px 0 0; }
+@media (max-width: 1100px) { .rec-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

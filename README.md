@@ -113,6 +113,27 @@ stack DR = sub DR + ½ log₂ N
 
 This definition is specific to this tool. It differs from the sensor dynamic range `log₂(full well / R)` because the sky uses up part of the well and adds noise of its own. The stack term reflects the `√N` fall in background noise when averaging.
 
+### Recommended plan
+
+The recommendation is a grid search over sub length (round values from 1 s to 30 min), gain (steps of 10, plus the high-conversion-gain and unity-gain settings) and filter. The target, camera, telescope, sky, temperature and total time are held fixed. The total is the exposure time when the session is planned by exposure time, and the wall-clock time otherwise.
+
+The quantity maximised is the expected stack SNR at the target peak:
+
+```
+expected SNR = sub SNR × √(N × kept),   kept = e^(−t / τ)
+```
+
+`kept` is the expected share of subs that survive. Interruptions such as gusts, guiding excursions and passing cloud are treated as a Poisson process with a mean spacing `τ`, and any interruption during a sub loses that sub. Without this term the model always favours the longest sub that does not saturate.
+
+Two optional limits stop the search from choosing the highest gain, which always has the lowest read noise:
+
+- a minimum single-sub dynamic range, in stops, as defined below;
+- a star of a chosen magnitude must not saturate in one sub. The peak pixel of a star centred on a pixel receives the fraction `erf(0.5 / (√2 σ))²` of its light, where `σ` is the seeing in pixels.
+
+SNR is often nearly flat in gain and sub length, so plans within 1% of the best SNR are treated as ties and the one with the most single-sub dynamic range is chosen.
+
+The loss model, the limits and the tie-break are this tool's own construction, not taken from the literature. The comparison between filters is by SNR on one target only.
+
 ### Saturation
 
 A pixel is treated as saturated when `S + B + D` reaches the full well in a single sub. SNR is not reported beyond that point, which is why some curves stop at a "Well full" marker.

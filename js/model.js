@@ -120,7 +120,104 @@
     };
   }
 
+  /** Error function: rational approximation 7.1.26 of Abramowitz & Stegun. */
+  function erf(x) {
+    const s = x < 0 ? -1 : 1, a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
+    return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
+  }
+
+  /** Share of a star's light that lands in its central pixel (Gaussian seeing disc centred on the pixel). */
+  function starPeakFraction(s, r) {
+    const sigma = Math.max(0.35, s.seeing / r.scale / 2.3548);
+    const e = erf(0.5 / (Math.SQRT2 * sigma));
+    return e * e;
+  }
+
+  /**
+   * Expected share of subs that survive. Sub-ruining events (gusts, guiding excursions, cloud) are
+   * taken as random, on average `lossTime` minutes apart; one event during a sub loses it.
+   */
+  function keptFraction(s, t) {
+    return s.lossOn && s.lossTime > 0 ? Math.exp(-t / (s.lossTime * 60)) : 1;
+  }
+
+  // Practical sub lengths considered by the recommendation (s).
+  const REC_SUBS = [1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 450, 600, 900, 1200, 1800];
+
+  /**
+   * Best sub length and gain for each filter, for a fixed total (integration if the session is planned
+   * by exposure time, wall-clock time otherwise). Maximises the expected stack SNR at the target peak,
+   * snrSub * sqrt(n * keptFraction), subject to the headroom limits that are switched on. Plans within
+   * 1% of the best SNR are treated as ties and settled in favour of dynamic range.
+   */
+  function recommend(s) {
+    const fixedInt = s.plan === 'int';
+    const total = fixedInt ? s.totalInt * 3600 : sessionTime(s, s.n, s.sub);
+    const gains = [];
+    for (let g = 0; g <= s.gainMax; g += 10) gains.push(g);
+    [s.hcg, Math.round(sensorAtGain(s, 0).unityGain)].forEach(g => { if (g > 0 && g < s.gainMax && !gains.includes(g)) gains.push(g); });
+    gains.sort((a, b) => a - b);
+    const sensors = gains.map(g => sensorAtGain(s, g));
+    const subsFor = t => fixedInt ? Math.round(total / t) : Math.floor(total / (t + s.ditherTime) + 1e-6);
+
+    // One candidate plan, or null when it is not allowed. `r` are the rates for the filter in use.
+    function evaluate(r, frac, sen, t, n, limits) {
+      if (n < 1) return null;
+      const st = stats(r, sen, t, n, r.target);
+      if (st.saturated) return null;
+      const perMag0 = r.star0 * t * frac;                               // peak-pixel electrons from a mag-0 star
+      const satStarMag = -2.5 * Math.log10((sen.fullWell - st.B - st.D) / perMag0);
+      const starOk = !s.recStarOn || satStarMag <= s.recStarMag;
+      const drOk = !s.recDrOn || st.drSub >= s.recDrMin;
+      if (limits && !(starOk && drOk)) return { rejected: true, starOk, drOk, drSub: st.drSub, satStarMag };
+      const kept = keptFraction(s, t);
+      return { t, n, snr: st.snr * Math.sqrt(kept), snrNoLoss: st.snr, lost: 1 - kept, drSub: st.drSub, drStack: st.drStack, satStarMag, starOk, drOk };
+    }
+
+    const filters = FILTERS.map(f => {
+      const r = rates(Object.assign({}, s, { filter: f.id }));
+      const frac = starPeakFraction(s, r);
+      let best = null, anyStar = false, maxDr = -Infinity, minStar = Infinity;
+      const passing = [];
+      const byGain = gains.map((g, gi) => REC_SUBS.map(t => {
+        const c = evaluate(r, frac, sensors[gi], t, subsFor(t), true);
+        if (!c) return null;
+        if (c.starOk) { anyStar = true; maxDr = Math.max(maxDr, c.drSub); }
+        minStar = Math.min(minStar, c.satStarMag);
+        if (c.rejected) return null;
+        c.gain = g;
+        passing.push(c);
+        return c;
+      }));
+      // SNR is often almost flat in gain, so among plans within 1% of the best SNR take the one
+      // with the most single-sub dynamic range.
+      const top = passing.reduce((m, c) => Math.max(m, c.snr), 0);
+      passing.forEach(c => { if (c.snr >= 0.99 * top && (!best || c.drSub > best.drSub)) best = c; });
+      if (!best) {
+        const reason = !isFinite(minStar) ? 'The target itself fills the well, or the session is shorter than one sub.'
+          : !anyStar ? `A magnitude ${s.recStarMag} star saturates in every plan; the brightest that can be kept is about magnitude ${minStar.toFixed(1)}.`
+          : `No plan reaches ${s.recDrMin} stops of single-sub dynamic range; the most available is ${maxDr.toFixed(1)}.`;
+        return { id: f.id, name: f.name, bw: r.bw, best: null, reason };
+      }
+      // The optimum is flat: report the span of sub lengths within 2% of the best at the chosen gain.
+      const near = byGain[gains.indexOf(best.gain)].filter(c => c && c.snr >= 0.98 * best.snr).map(c => c.t);
+      best.tRange = [Math.min.apply(null, near), Math.max.apply(null, near)];
+      return { id: f.id, name: f.name, bw: r.bw, best };
+    });
+
+    const r0 = rates(s);
+    const current = evaluate(r0, starPeakFraction(s, r0), sensorAtGain(s, s.gain), s.sub, s.n, false);
+    const ok = filters.filter(f => f.best);
+    return {
+      fixedInt, total, filters,
+      current,                                                           // null when the current plan saturates
+      mine: filters.find(f => f.id === s.filter) || filters[0],
+      top: ok.length ? ok.reduce((a, b) => b.best.snr > a.best.snr ? b : a) : null
+    };
+  }
+
   window.Model = {
+    erf, starPeakFraction, keptFraction, recommend,
     FILTERS, BORTLE_SQM, OSC_MAX_BW,
     interp, sensorAtGain, skyBrightness, sessionTime, subsInSession, rates, stats, compute
   };

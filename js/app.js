@@ -4,8 +4,6 @@
   const $ = id => document.getElementById(id);
   const STORE = 'astronoise.state.v2';
 
-  // Width of the simulated target (Gaussian FWHM, arcseconds). Fixed: it only sets the scale of the picture.
-  const TGT_FWHM = 100;
   // Common targets: [id, name, peak surface brightness (V-equivalent mag/arcsec^2), spectrum].
   // Approximate, representative values for the named part of each object.
   const TARGETS = [
@@ -38,10 +36,11 @@
     camId: 'asi2600mm', pix: 3.76, qe: 91, bits: 16, fw: 50000, dark0: 0.003, darkDouble: 6, rnOverride: 0,
     gain: 100, temp: -10,
     skyMode: 'bortle', bortle: 5, sqm: 20.3, filter: 'L',
-    tgtId: 'm101', tgtMag: 23, tgtFwhm: 100, tgtType: 'cont',
+    tgtId: 'm101', tgtMag: 23, tgtFwhm: 60, tgtType: 'cont',
     sub: 120, plan: 'n', n: 60, totalInt: 2, totalSession: 2.17,
     ditherTime: 10, swamp: 5,
-    simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, simHistZoom: false, simHistLog: false, seeing: 2.5
+    simFrame: 'single', simView: 'raw', simSort: 'pos', simStars: false, lossOn: true, lossTime: 30, recDrOn: true, recDrMin: 9, recStarOn: false, recStarMag: 12,
+    simHistZoom: false, simHistLog: false, seeing: 2.5
   };
 
   let state = Object.assign({}, DEFAULTS);
@@ -52,7 +51,6 @@
     else if (typeof DEFAULTS[k] === 'boolean') state[k] = v === 'true' || v === '1';
     else if (k in DEFAULTS) state[k] = typeof DEFAULTS[k] === 'number' ? (isFinite(parseFloat(v)) ? parseFloat(v) : state[k]) : v;
   });
-  state.tgtFwhm = TGT_FWHM;
   // A stored or URL-supplied brightness that no longer matches the named target makes it a custom one.
   (function () {
     const t = TARGETS.find(x => x[0] === state.tgtId);
@@ -68,7 +66,7 @@
   /** Model parameters: UI state plus the fixed properties of the selected camera. */
   function params() {
     const cam = camera();
-    return Object.assign({}, state, { qe: state.qe / 100, rn: cam.rn, mono: cam.mono, res: cam.res });
+    return Object.assign({}, state, { qe: state.qe / 100, rn: cam.rn, mono: cam.mono, res: cam.res, gainMax: cam.gainMax, hcg: cam.hcg });
   }
 
   // ---------- formatting ----------
@@ -107,13 +105,23 @@
       <p><b>Frame.</b> A single sub, or the mean of all the subs in the plan: averaging N subs shrinks every noise term by √N while the signal stays put.</p>
       <p><b>Sort.</b> Re-orders the pixels by one source so its distribution can be compared with the others.</p>
       <p>The two images are stretched from just below the background to just above the target peak.</p>
-      <p><b>Histogram.</b> Below the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
+      <p><b>Histogram.</b> Below the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. The dashed lines are the stretch curves: for each image, the stretched brightness (0 at the bottom of the plot, 1 at the top) that each linear brightness is mapped to. They are shown in the linear views only, since in the Stretched view the histogram is already of the stretched values. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
+    recommend: `<h4>Recommended plan</h4>
+      <p>A search over sub length, gain and filter for the plan with the highest expected stack SNR at the target peak. The target, camera, telescope, sky, temperature and total time stay as you set them. The total is the exposure time if you plan the session by exposure time, and the wall-clock time otherwise.</p>
+      <p>Left to itself the model always prefers the longest sub and the highest gain, so the search needs something to push back. These are set in the Recommendation panel:</p>
+      <p><b>Lost subs.</b> Interruptions such as gusts, guiding excursions and passing cloud are treated as random events a typical time apart. A sub of length t survives with probability e<sup>−t/τ</sup>, where τ is that time, so the expected SNR is the sub SNR × √(subs × share kept). Longer subs lose more.</p>
+      <p><b>Minimum dynamic range.</b> Every plan must keep at least this many stops between the background noise and full well in a single sub. This is what limits gain and very long subs.</p>
+      <p><b>Protected star.</b> Alternatively, or as well, a star of the chosen magnitude must not saturate in a single sub.</p>
+      <p>SNR is often nearly flat across gain and sub length. Plans within 1% of the best SNR are treated as ties and settled in favour of more dynamic range, and the card gives the range of sub lengths that come within 2% of the best.</p>
+      <p>Sub lengths are chosen from a list of round values between 1 s and 30 min, and gains in steps of 10.</p>
+      <p><b>Filters.</b> The table gives the best plan for each filter. It compares SNR on this one target only: filters record different things, so the highest SNR is not automatically the right choice.</p>`,
     tradeoff: `<h4>Sub-exposure trade-off</h4>
       <p>The total wall-clock time is held at its current value while the sub length varies, so longer subs mean fewer of them.</p>
       <p><b>Stack SNR.</b> Signal ÷ noise at the target peak after stacking. Short subs lose out twice: read noise is paid once per sub, and each sub costs dither and settle time. The grey line is an ideal camera with no read noise, dark current or overhead. The curve stops at the "Well full" marker: in longer subs the target peak, with the sky and dark current under it, fills the well, so the pixel is clipped and has no meaningful SNR.</p>
       <p><b>Sky-limited marker.</b> The sub length at which read noise raises the background noise by the allowed penalty (5% by default, set in the Sky panel). Beyond it, longer subs gain very little.</p>
       <p><b>Dynamic range.</b> log₂ of the headroom left above the background (full well − sky − dark) divided by the background noise. Stacking N subs adds ½·log₂N stops. Longer subs fill the well with sky and so lose headroom: bright stars clip sooner.</p>
       <p><b>Share of variance.</b> Noise sources add as variances (σ²), so this shows how much of each sub's noise each source is responsible for.</p>
+      <p><b>With expected sub losses.</b> The pink line is the SNR after allowing for subs lost to interruptions, as set in the Recommendation panel. It is what the recommended plan maximises, and the Recommended marker shows the sub length chosen for the current filter (possibly at a different gain from the one plotted).</p>
       <p>Click any of the three charts to set the sub length.</p>`,
     time: `<h4>SNR as the session goes on</h4>
       <p>Stack SNR at the target peak against wall-clock time for the current sub length. SNR grows with the square root of time: four times the time for twice the SNR.</p>
@@ -147,7 +155,7 @@
       <p>The sky is treated as a flat spectrum, so the sky electron rate scales with the filter bandwidth. Narrowband filters cut sky glow by the ratio of the bandwidths.</p>
       <p><b>Allowed read-noise penalty</b> defines "sky-limited": the sub length at which read noise adds this percentage to the background noise.</p>`,
     target: `<h4>Target</h4>
-      <p>A Gaussian patch of light with the given peak surface brightness and a fixed width of ${TGT_FWHM}″ (full width at half maximum). All SNR figures refer to the pixel at its peak, so the width only changes how the simulated picture looks.</p>
+      <p>A Gaussian patch of light with the given peak surface brightness and width (full width at half maximum). All SNR figures refer to the pixel at its peak, so the width only changes how the simulated picture looks.</p>
       <p><b>Object</b> offers common targets with a representative peak surface brightness (in brackets, mag/″²) and spectrum. These are approximate figures for the named part of each object; real objects vary a great deal across their extent. Changing the brightness or spectrum by hand switches the object to Custom.</p>
       <p><b>Continuum</b> targets (galaxies, reflection nebulae, star clusters) emit across the spectrum, so a narrower filter passes proportionally less of their light.</p>
       <p><b>Emission-line</b> targets are given as the V-band-equivalent brightness of the line, and keep that flux through any filter that contains the line. This is why narrowband filters work so well on them under bright skies.</p>`
@@ -221,19 +229,32 @@
       { key: 'swamp', label: 'Allowed read-noise penalty', unit: '%', kind: 'number', min: 1, max: 50, step: 1,
         hint: 'Sets the "sky-limited" sub length: the point where read noise adds this much to the sky background noise.' }
     ] },
+    { title: 'Recommendation', info: 'recommend', open: false, fields: [
+      { key: 'lossOn', label: 'Allow for lost subs', kind: 'check' },
+      { key: 'lossTime', label: 'Typical time between interruptions', unit: 'min', kind: 'range', log: true, min: 2, max: 600, showIf: s => s.lossOn,
+        hint: 'Gusts, guiding excursions, passing cloud. A sub hit by one is thrown away, so long subs are riskier.' },
+      { key: 'recDrOn', label: 'Require a minimum dynamic range', kind: 'check' },
+      { key: 'recDrMin', label: 'Single-sub dynamic range', unit: 'stops', kind: 'range', min: 4, max: 14, step: 0.5, showIf: s => s.recDrOn,
+        hint: 'Headroom between the background noise and full well in one sub.' },
+      { key: 'recStarOn', label: 'Keep a star unsaturated', kind: 'check' },
+      { key: 'recStarMag', label: 'Brightest star to protect', unit: 'mag', kind: 'range', min: 2, max: 16, step: 0.5, showIf: s => s.recStarOn,
+        hint: 'A star of this magnitude must not fill the well in a single sub. Uses the seeing set in the Sky panel.' }
+    ] },
     { title: 'Target', info: 'target', open: true, readout: 'tgt', fields: [
       { key: 'tgtId', label: 'Object', kind: 'select',
         groups: ['line', 'cont'].map(ty => [TYPE_NAMES[ty], TARGETS.filter(t => t[3] === ty).map(t => [t[0], `${t[1]} (${t[2].toFixed(1)})`])])
           .concat([['Other', [['custom', 'Custom']]]]),
         hint: 'Fills in the brightness and spectrum below. Values are approximate.' },
       { key: 'tgtMag', label: 'Peak surface brightness', unit: 'mag/″²', kind: 'range', min: 14, max: 28, step: 0.1 },
+      { key: 'tgtFwhm', label: 'Width (FWHM)', unit: '″', kind: 'range', log: true, min: 2, max: 600,
+        hint: 'Only changes how the simulated picture looks.' },
       { key: 'tgtType', label: 'Spectrum', kind: 'select',
         options: [['cont', 'Continuum (galaxy, reflection nebula)'], ['line', 'Emission line (Hα, OIII, SII)']],
         hint: 'A continuum target dims as the filter narrows. An emission-line target keeps its V-equivalent flux through any filter.' }
     ] }
   ];
   // Order of the panels in the sidebar.
-  const PANEL_ORDER = ['Target', 'Exposure', 'Sky', 'Camera', 'Telescope'];
+  const PANEL_ORDER = ['Target', 'Exposure', 'Recommendation', 'Sky', 'Camera', 'Telescope'];
   SECTIONS.sort((x, y) => PANEL_ORDER.indexOf(x.title) - PANEL_ORDER.indexOf(y.title));
   const FIELDS = {};
   SECTIONS.forEach(sec => sec.fields.forEach(f => FIELDS[f.key] = f));
@@ -256,7 +277,10 @@
         const w = document.createElement('div');
         w.className = 'field'; w.id = 'w-' + f.key;
         let h = `<label for="f-${f.key}">${f.label}</label>`;
-        if (f.kind === 'select') {
+        if (f.kind === 'check') {
+          w.classList.add('check');
+          h = `<label><input type="checkbox" id="f-${f.key}"> ${f.label}</label>`;
+        } else if (f.kind === 'select') {
           const opts = list => list.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('');
           h += `<select id="f-${f.key}">${f.groups ? f.groups.map(g => `<optgroup label="${g[0]}">${opts(g[1])}</optgroup>`).join('') : opts(f.options)}</select>`;
         } else {
@@ -271,7 +295,7 @@
         w.innerHTML = h;
         d.appendChild(w);
         const input = w.querySelector('#f-' + f.key);
-        input.addEventListener('change', () => set(f.key, f.kind === 'select' ? input.value : parseFloat(input.value)));
+        input.addEventListener('change', () => set(f.key, f.kind === 'check' ? input.checked : f.kind === 'select' ? input.value : parseFloat(input.value)));
         const slider = w.querySelector('#r-' + f.key);
         if (slider) slider.addEventListener('input', () => set(f.key, fromPos(f, parseFloat(slider.value))));
       });
@@ -291,6 +315,7 @@
     for (const key in FIELDS) {
       const f = FIELDS[key], input = $('f-' + key), slider = $('r-' + key);
       if (f.showIf) $('w-' + key).hidden = !f.showIf(state);
+      if (f.kind === 'check') { input.checked = !!state[key]; continue; }
       if (document.activeElement !== input || f.kind === 'select') input.value = f.kind !== 'select' && !f.int ? +state[key].toPrecision(4) : shown(state[key]);
       if (f.kind !== 'select') input.max = f.max;
       if (slider) {
@@ -336,7 +361,6 @@
     if (!used) throw new Error('No AstroNoise settings were found in this file.');
     state = next;
     state.gain = Math.max(0, Math.min(camera().gainMax, Math.round(state.gain)));
-    state.tgtFwhm = TGT_FWHM;
     const t = TARGETS.find(x => x[0] === state.tgtId);
     if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
     reconcile(); syncControls(); schedule();
@@ -388,7 +412,8 @@
 
   function set(key, value) {
     const f = FIELDS[key];
-    if (f && f.kind !== 'select') {
+    if (f && f.kind === 'check') value = !!value;
+    else if (f && f.kind !== 'select') {
       if (!isFinite(value)) { syncControls(); return; }
       value = Math.max(f.min, Math.min(f.max, f.int ? Math.round(value) : value));
     }
@@ -423,7 +448,9 @@
     renderReadouts(p, c);
     renderTiles(p, c);
     renderAlerts(p, c);
-    renderTradeoff(p, c);
+    const rec = Model.recommend(p);
+    renderRecommend(p, c, rec);
+    renderTradeoff(p, c, rec);
     renderTime(p, c);
     renderBudget(p, c);
     renderGain(p, c);
@@ -478,10 +505,71 @@
   // Stacking order, bottom to top (the same as in the simulated pixels plot).
   const SHARE_SERIES = [['dark', 'Dark current', '--c-dark'], ['read', 'Read noise', '--c-read'], ['sky', 'Sky glow', '--c-sky'], ['tgt', 'Target shot noise', '--c-target']];
 
-  function renderTradeoff(p, c) {
+  // ---------- recommendation ----------
+  let recPlans = {};
+  function applyPlan(filterId) {
+    const b = recPlans[filterId];
+    if (!b) return;
+    state.filter = filterId; state.sub = b.t; state.gain = b.gain;
+    if (state.plan === 'n') state.n = b.n;                    // keep the session length the search assumed
+    reconcile(); syncControls(); schedule();
+  }
+
+  function renderRecommend(p, c, rec) {
+    const el = $('recommend'), mine = rec.mine, b = mine.best, cur = rec.current;
+    recPlans = {};
+    rec.filters.forEach(f => { if (f.best) recPlans[f.id] = f.best; });
+    $('recommend-sub').textContent = `Highest expected SNR for ${fmtDur(rec.total)} of ${rec.fixedInt ? 'exposure' : 'wall-clock time'}, within the limits set in the Recommendation panel.`;
+    const limits = [p.lossOn ? `interruptions every ${trim(p.lossTime.toPrecision(3))} min` : 'no lost subs',
+      p.recDrOn ? `at least ${p.recDrMin} stops in a sub` : '', p.recStarOn ? `magnitude ${p.recStarMag} star unsaturated` : ''].filter(Boolean).join(' · ');
+    const same = (f, x) => x && f === p.filter && x.t === p.sub && x.gain === p.gain;
+    let h = '';
+    if (!b) {
+      h += `<div class="alert critical"><b>No plan fits</b><span>${mine.reason} Relax the limits in the Recommendation panel.</span></div>`;
+    } else {
+      let cmp;
+      if (same(mine.id, b)) cmp = 'This is your current plan.';
+      else if (!cur) cmp = 'Your current plan saturates at the target peak.';
+      else {
+        const d = b.snr / cur.snr - 1;
+        const fails = [p.recDrOn && !cur.drOk ? `has only ${cur.drSub.toFixed(1)} stops of dynamic range` : '',
+          p.recStarOn && !cur.starOk ? `saturates stars brighter than magnitude ${cur.satStarMag.toFixed(1)}` : ''].filter(Boolean).join(' and ');
+        const more = b.drSub - cur.drSub;
+        cmp = (Math.abs(d) <= 0.0101 ? 'About the same expected SNR as' : `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}% expected SNR against`) +
+          ` your current plan (${cur.snr.toFixed(1)})` + (fails ? `, which ${fails}.`
+            : Math.abs(d) <= 0.0101 && more >= 0.05 ? `, with ${more.toFixed(1)} more stops of dynamic range in each sub.` : '.');
+      }
+      const range = b.tRange[0] === b.tRange[1] ? fmtSub(b.t) + ' only' : `${fmtSub(b.tRange[0])} to ${fmtSub(b.tRange[1])}`;
+      h += `<div class="rec-main">
+          <div><div class="rec-plan"><b>${fmtSub(b.t)}</b> subs at gain <b>${b.gain}</b></div>
+            <div class="rec-note">${b.n.toLocaleString('en-US')} subs with the ${mine.name} filter · expected SNR <b>${b.snr.toFixed(1)}</b></div>
+            <div class="rec-note">${cmp}</div></div>
+          <button type="button" class="primary" data-f="${mine.id}"${same(mine.id, b) ? ' disabled' : ''}>Apply</button>
+        </div>
+        <dl class="rec-facts">
+          <div><dt>Subs expected to be lost</dt><dd>${(b.lost * 100).toFixed(b.lost < 0.1 ? 1 : 0)}% (about ${Math.round(b.lost * b.n)} of ${b.n})</dd></div>
+          <div><dt>Dynamic range</dt><dd>${b.drSub.toFixed(1)} stops in a sub · ${b.drStack.toFixed(1)} in the stack</dd></div>
+          <div><dt>Brightest unsaturated star</dt><dd>magnitude ${b.satStarMag.toFixed(1)}</dd></div>
+          <div><dt>Sub lengths within 2% of the best</dt><dd>${range}</dd></div>
+        </dl>`;
+    }
+    h += `<h3>Best plan for each filter</h3><table class="budget rec-table"><thead><tr><th>Filter</th><th>Sub</th><th>Gain</th><th>Subs</th><th>Expected SNR</th><th>Sub dynamic range</th><th></th></tr></thead><tbody>`;
+    rec.filters.forEach(f => {
+      const tags = (f.id === p.filter ? ' <span class="tag">current</span>' : '') + (rec.top && f.id === rec.top.id ? ' <span class="tag best">highest SNR</span>' : '');
+      const name = `${f.name}${f.bw !== Model.FILTERS.find(x => x.id === f.id).bw ? ` (${f.bw} nm through the colour matrix)` : ''}${tags}`;
+      if (!f.best) { h += `<tr><td>${name}</td><td colspan="6" class="none">${f.reason}</td></tr>`; return; }
+      const x = f.best;
+      h += `<tr><td>${name}</td><td>${fmtSub(x.t)}</td><td>${x.gain}</td><td>${x.n.toLocaleString('en-US')}</td><td>${x.snr.toFixed(1)}</td><td>${x.drSub.toFixed(1)} stops</td>
+        <td><button type="button" data-f="${f.id}"${same(f.id, x) ? ' disabled' : ''}>Use</button></td></tr>`;
+    });
+    h += `</tbody></table><p class="rec-limits">Limits: ${limits}. SNR compares filters on this target only; they record different things.</p>`;
+    el.innerHTML = h;
+  }
+
+  function renderTradeoff(p, c, rec) {
     const T = c.session;
     const lo = p.sub < 1 ? 0.1 : 1, hi = 1800, N = 100;
-    const snr = [], drStack = [], drSub = [], ideal = [];
+    const snr = [], drStack = [], drSub = [], ideal = [], withLoss = [];
     const share = { dark: [], sky: [], tgt: [], read: [] };
     for (let i = 0; i <= N; i++) {
       const t = lo * Math.pow(hi / lo, i / N);
@@ -489,6 +577,7 @@
       const st = Model.stats(c.r, c.sen, t, Math.max(n, 1e-9), c.r.target);
       const ok = n >= 0.999 && !st.saturated;
       snr.push([t, ok ? st.snr : NaN]);
+      withLoss.push([t, ok ? st.snr * Math.sqrt(Model.keptFraction(p, t)) : NaN]);
       ideal.push([t, c.snrIdeal]);
       drStack.push([t, n >= 0.999 ? st.drStack : NaN]);
       drSub.push([t, st.drSub]);
@@ -505,10 +594,12 @@
       { x: c.tSkyLimited, label: labels ? `Sky-limited: ${fmtSub(c.tSkyLimited)}` : '' },
       // Beyond this the target peak fills the well in every sub, so there is no SNR to plot.
       { x: c.tSaturate, label: labels ? `Well full: ${fmtSub(c.tSaturate)}` : '' }
-    ];
+    ].concat(labels && rec.mine.best ? [{ x: rec.mine.best.t, label: `Recommended: ${fmtSub(rec.mine.best.t)}` }] : []);
     Charts.draw($('ch-snr'), Object.assign({}, common, {
       height: 230, markers: markers(true), endLabels: true,
-      series: [{ name: 'This setup', color: '--c-metric', pts: snr }, { name: 'Ideal camera', ref: true, pts: ideal }],
+      series: [{ name: 'This setup', color: '--c-metric', pts: snr }]
+        .concat(p.lossOn ? [{ name: 'With expected sub losses', short: 'With sub losses', color: '--c-expected', pts: withLoss }] : [],
+          [{ name: 'Ideal camera', ref: true, pts: ideal }]),
       point: { x: p.sub, y: c.st.saturated ? NaN : c.st.snr }, yFmt: v => Charts.fmtNum(v),
       yLabel: 'Stack SNR (ratio)', xLabel: SUB_AXIS,
       aria: 'Stack signal-to-noise ratio against sub-exposure length for a fixed session time'
@@ -629,6 +720,7 @@
     }
     Sim.drawPatch($('patch-single'), simData, simData.single, str);
     Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
+    $('hist-curve-key').hidden = str;
     $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
     Sim.drawHist($('hist-canvas'), simData, str, state.simHistZoom, state.simHistLog);
     $('cap-single').textContent = `Single ${fmtSub(p.sub)} sub · peak SNR ${c.st.snrSub.toFixed(2)}`;
@@ -699,6 +791,7 @@
       schedule();
     });
     initSettingsFiles();
+    $('recommend').addEventListener('click', e => { const b = e.target.closest('button[data-f]'); if (b) applyPlan(b.dataset.f); });
     $('reset').addEventListener('click', () => {
       state = Object.assign({}, DEFAULTS);
       reconcile(); syncControls(); schedule();

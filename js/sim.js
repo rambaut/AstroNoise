@@ -35,10 +35,7 @@
   // Optional field stars, placed along the middle row so they appear in the cross-section.
   const STARS = [8, 10, 12, 14, 16, 18].map((mag, k) => ({ mag, x: 12 + k * 27, name: 'mag ' + mag }));
 
-  function erf(x) {
-    const s = x < 0 ? -1 : 1, a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
-    return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
-  }
+  const erf = Model.erf;
 
   /** Electron rate (e-/s) in every pixel from the stars: a Gaussian seeing disc integrated over each pixel. */
   function starMap(c, s) {
@@ -215,6 +212,21 @@
     };
     series(count(frames[0]), col('--c-stretch'), 0.3);
     series(count(frames[1]), col('--c-metric'), 0.3);
+
+    // The stretch each image would get, drawn over its linear histogram: brightness in along the
+    // axis, stretched brightness out from 0 at the bottom of the plot to 1 at the top.
+    if (!stretched) {
+      [[sim.single, col('--c-stretch')], [sim.stack, col('--c-metric')]].forEach(([f, color]) => {
+        const st = stretcher(sim, f);
+        ctx.beginPath();
+        for (let px = 0; px <= pw; px++) {
+          const x = lo + px / pw * (hi - lo), v = log ? Math.pow(10, x) : x;
+          const yy = m.t + ph * (1 - st(v * sim.fullWell));
+          if (px) ctx.lineTo(m.l + px, yy); else ctx.moveTo(m.l + px, yy);
+        }
+        ctx.setLineDash([4, 3]); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+      });
+    }
 
     ctx.strokeStyle = col('--axis'); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(m.l, m.t + ph + 0.5); ctx.lineTo(m.l + pw, m.t + ph + 0.5); ctx.stroke();
