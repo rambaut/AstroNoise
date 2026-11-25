@@ -105,7 +105,8 @@
       <p><b>Frame.</b> A single sub, or the mean of all the subs in the plan: averaging N subs shrinks every noise term by √N while the signal stays put.</p>
       <p><b>Sort.</b> Re-orders the pixels by one source so its distribution can be compared with the others.</p>
       <p>The two images are stretched from just below the background to just above the target peak.</p>
-      <p><b>Histogram.</b> Below the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. The dashed lines are the stretch curves: for each image, the stretched brightness (0 at the bottom of the plot, 1 at the top) that each linear brightness is mapped to. They are shown in the linear views only, since in the Stretched view the histogram is already of the stretched values. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
+      <p><b>Stretch curve.</b> Above the histogram, the stretch applied to each image in the Stretched view: linear brightness in along the bottom, stretched brightness out up the side. Each image has its own curve because the black point depends on its noise. The curve follows the Zoom and Log settings of the histogram, so in the linear views the two plots share one brightness axis.</p>
+      <p><b>Histogram.</b> Beside the two image patches is a histogram of image brightness: the number of pixels (log scale) at each brightness from 0 to 1, for the single sub and for the stack. Brightness is the pixel value as a fraction of full well, or the stretched value in the Stretched view. Pixels clipped to black pile up at 0 and saturated pixels at 1. Unstretched deep-sky data sits in a thin spike near 0, which is why images need stretching. <b>Zoom</b> narrows the axis to the range of values actually present, without changing the values. <b>Log</b> puts brightness on a logarithmic scale, which spreads out the faint end; pixels at exactly zero cannot be shown on it and are left out. Gaps or a comb pattern show the ADC's discrete levels.</p>`,
     recommend: `<h4>Recommended plan</h4>
       <p>A search over sub length, gain and filter for the plan with the highest expected stack SNR at the target peak. The target, camera, telescope, sky, temperature and total time stay as you set them. The total is the exposure time if you plan the session by exposure time, and the wall-clock time otherwise.</p>
       <p>Left to itself the model always prefers the longest sub and the highest gain, so the search needs something to push back. These are set in the Recommendation panel:</p>
@@ -720,9 +721,9 @@
     }
     Sim.drawPatch($('patch-single'), simData, simData.single, str);
     Sim.drawPatch($('patch-stack'), simData, simData.stack, str);
-    $('hist-curve-key').hidden = str;
-    $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
+        $('hist-zoom').checked = state.simHistZoom; $('hist-log').checked = state.simHistLog;
     Sim.drawHist($('hist-canvas'), simData, str, state.simHistZoom, state.simHistLog);
+    Sim.drawHist($('curve-canvas'), simData, false, state.simHistZoom, state.simHistLog, true);
     $('cap-single').textContent = `Single ${fmtSub(p.sub)} sub · peak SNR ${c.st.snrSub.toFixed(2)}`;
     $('cap-stack').textContent = `Mean of ${p.n} subs (${fmtDur(c.integration)}) · peak SNR ${c.st.snr.toFixed(1)}`;
   }

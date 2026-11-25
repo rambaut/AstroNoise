@@ -154,8 +154,12 @@
    * on a 0..1 scale. Brightness is the pixel value as a fraction of full well (or its stretched value),
    * so pixels clipped at black pile up at 0 and saturated ones at 1. `zoom` narrows the axis to the
    * range of values present; `log` puts brightness on a log scale, which leaves out pixels at zero.
+   *
+   * With `curve`, the same axis (always linear brightness) carries the stretch curve of each image
+   * instead: brightness in along the axis, stretched brightness out, 0 to 1, up the side.
    */
-  function drawHist(canvas, sim, stretched, zoom, log) {
+  function drawHist(canvas, sim, stretched, zoom, log, curve) {
+    if (curve) stretched = false;
     const css = getComputedStyle(canvas);
     const col = name => css.getPropertyValue(name).trim();
     const dpr = window.devicePixelRatio || 1;
@@ -196,26 +200,15 @@
 
     ctx.font = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
     ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
-    for (let p = 0; Math.pow(10, p) <= total; p++) {
-      const n = Math.pow(10, p), yy = Math.round(y(n)) + 0.5;
+    const gridLine = (yy, label) => {
+      yy = Math.round(yy) + 0.5;
       ctx.strokeStyle = col('--grid'); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(m.l, yy); ctx.lineTo(m.l + pw, yy); ctx.stroke();
       ctx.fillStyle = col('--text-muted');
-      ctx.fillText(n >= 1000 ? n / 1000 + 'k' : String(n), m.l - 4, yy);
-    }
-    const series = (h, color, fillAlpha) => {
-      ctx.beginPath(); ctx.moveTo(m.l, m.t + ph);
-      h.forEach((n, k) => { ctx.lineTo(m.l + k * bw, y(n)); ctx.lineTo(m.l + (k + 1) * bw, y(n)); });
-      ctx.lineTo(m.l + pw, m.t + ph); ctx.closePath();
-      ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill();
-      ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.fillText(label, m.l - 4, yy);
     };
-    series(count(frames[0]), col('--c-stretch'), 0.3);
-    series(count(frames[1]), col('--c-metric'), 0.3);
-
-    // The stretch each image would get, drawn over its linear histogram: brightness in along the
-    // axis, stretched brightness out from 0 at the bottom of the plot to 1 at the top.
-    if (!stretched) {
+    if (curve) {
+      [0, 0.25, 0.5, 0.75, 1].forEach(v => gridLine(m.t + ph * (1 - v), String(v)));
       [[sim.single, col('--c-stretch')], [sim.stack, col('--c-metric')]].forEach(([f, color]) => {
         const st = stretcher(sim, f);
         ctx.beginPath();
@@ -224,8 +217,19 @@
           const yy = m.t + ph * (1 - st(v * sim.fullWell));
           if (px) ctx.lineTo(m.l + px, yy); else ctx.moveTo(m.l + px, yy);
         }
-        ctx.setLineDash([4, 3]); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
       });
+    } else {
+      for (let p = 0; Math.pow(10, p) <= total; p++) { const n = Math.pow(10, p); gridLine(y(n), n >= 1000 ? n / 1000 + 'k' : String(n)); }
+      const series = (h, color, fillAlpha) => {
+        ctx.beginPath(); ctx.moveTo(m.l, m.t + ph);
+        h.forEach((n, k) => { ctx.lineTo(m.l + k * bw, y(n)); ctx.lineTo(m.l + (k + 1) * bw, y(n)); });
+        ctx.lineTo(m.l + pw, m.t + ph); ctx.closePath();
+        ctx.globalAlpha = fillAlpha; ctx.fillStyle = color; ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.lineJoin = 'round'; ctx.stroke();
+      };
+      series(count(frames[0]), col('--c-stretch'), 0.3);
+      series(count(frames[1]), col('--c-metric'), 0.3);
     }
 
     ctx.strokeStyle = col('--axis'); ctx.lineWidth = 1;
@@ -247,7 +251,7 @@
       ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, m.t + ph); ctx.lineTo(Math.round(x) + 0.5, m.t + ph + 3); ctx.stroke();
     });
     ctx.textAlign = 'center';
-    ctx.fillText((stretched ? 'Stretched brightness' : 'Brightness') + ' (1 = full well' + (log ? ', log scale)' : ')'), m.l + pw / 2, m.t + ph + 17);
+    ctx.fillText((curve ? 'Linear brightness in' : stretched ? 'Stretched brightness' : 'Brightness') + (log ? ' (log scale)' : ' (1 = full well)'), m.l + pw / 2, m.t + ph + 17);
   }
 
   function sortOrder(row, key) {
