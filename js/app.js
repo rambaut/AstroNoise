@@ -155,10 +155,11 @@
       <p>Presets are approximate transcriptions of published ZWO specifications. Check them against the data sheet for your camera; every value here can be edited.</p>
       <p>Full well at gain 0 and the ADC bit depth set the electrons per ADU. The read-noise curve comes from the preset; enter an override to use a single value instead.</p>
       <p>Dark current is given at 0 °C and scaled to the sensor temperature using the doubling interval.</p>
-      <p>Colour cameras are treated per pixel: the Bayer matrix limits each pixel to roughly a 100 nm band.</p>`,
+      <p>Colour cameras are treated one channel at a time: the Bayer matrix limits each pixel to roughly a 100 nm band, so everything shown is for the red, green or blue pixels alone. R, G and B filters are therefore offered for mono cameras only.</p>`,
     sky: `<h4>Sky</h4>
       <p>Sky brightness in magnitudes per square arcsecond, either from a Bortle class or a measured SQM reading. Typical zenith values used: Bortle 1 = 22.0, 2 = 21.9, 3 = 21.6, 4 = 21.1, 5 = 20.3, 6 = 19.3, 7 = 18.7, 8 = 18.2, 9 = 17.5.</p>
       <p>The sky is treated as a flat spectrum, so the sky electron rate scales with the filter bandwidth. Narrowband filters cut sky glow by the ratio of the bandwidths.</p>
+      <p><b>One channel.</b> Every number and plot is for a single channel. With a mono camera that is the one filter fitted: luminance, one of R, G or B, or one narrowband line. With a colour camera it is one colour of the Bayer matrix, or, behind a dual- or multi-band filter, one of the filter's lines as recorded by the pixels of the matching colour. R, G and B filters are not offered for colour cameras, whose Bayer matrix already does that job.</p>
       <p><b>Allowed read-noise penalty</b> defines "sky-limited": the sub length at which read noise adds this percentage to the background noise.</p>`,
     target: `<h4>Target</h4>
       <p>A Gaussian patch of light with the given peak surface brightness and width (full width at half maximum). All SNR figures refer to the pixel at its peak, so the width only changes how the simulated picture looks.</p>
@@ -229,7 +230,7 @@
       { key: 'skyMode', label: 'Sky brightness from', kind: 'select', options: [['bortle', 'Bortle class'], ['sqm', 'Measured SQM value']] },
       { key: 'bortle', label: 'Bortle class', kind: 'range', min: 1, max: 9, step: 1, int: true, showIf: s => s.skyMode === 'bortle' },
       { key: 'sqm', label: 'Sky brightness', unit: 'mag/″²', kind: 'range', min: 16, max: 22.2, step: 0.05, showIf: s => s.skyMode === 'sqm' },
-      { key: 'filter', label: 'Filter', kind: 'select', options: Model.FILTERS.map(f => [f.id, `${f.name} (${f.bw} nm)`]) },
+      { key: 'filter', label: 'Filter', kind: 'select', options: Model.FILTERS.map(f => [f.id, f.name]) },   // relabelled for the camera in syncControls
       { key: 'seeing', label: 'Seeing (star FWHM)', unit: '″', kind: 'number', min: 0.5, max: 10, step: 0.1,
         hint: 'Sets the size of the stars in the simulated pixels.' },
       { key: 'swamp', label: 'Allowed read-noise penalty', unit: '%', kind: 'number', min: 1, max: 50, step: 1,
@@ -318,6 +319,12 @@
   function syncControls() {
     const cam = camera();
     FIELDS.gain.max = cam.gainMax;
+    // The filter list depends on the camera: no R, G or B filters for a colour camera, and its own names.
+    const fsel = $('f-filter');
+    if (fsel.dataset.mono !== String(cam.mono)) {
+      fsel.dataset.mono = String(cam.mono);
+      fsel.innerHTML = Model.filtersFor(cam.mono).map(f => `<option value="${f.id}">${cam.mono ? `${f.name} (${f.bw} nm)` : f.osc}</option>`).join('');
+    }
     for (const key in FIELDS) {
       const f = FIELDS[key], input = $('f-' + key), slider = $('r-' + key);
       if (f.showIf) $('w-' + key).hidden = !f.showIf(state);
@@ -337,6 +344,7 @@
     if (state.plan === 'int') state.n = Math.round(state.totalInt * 3600 / state.sub);
     else if (state.plan === 'session') state.n = Math.floor(state.totalSession * 3600 / per + 1e-6);
     state.n = Math.max(1, Math.min(N_MAX, state.n));
+    state.filter = Model.filterFor({ filter: state.filter, mono: camera().mono }).id;
     if (state.plan !== 'int') state.totalInt = state.n * state.sub / 3600;
     if (state.plan !== 'session') state.totalSession = state.n * per / 3600;
   }
@@ -472,8 +480,11 @@
     $('ro-scope').innerHTML = `Aperture <b>${trim(r.aperture.toFixed(1))} mm</b> · <b>${r.scale.toFixed(2)}″</b> per pixel · field <b>${c.fov[0].toFixed(2)}° × ${c.fov[1].toFixed(2)}°</b>`;
     const unity = sen.unityGain >= 0 && sen.unityGain <= camera().gainMax ? ` · unity gain ${Math.round(sen.unityGain)}` : '';
     $('ro-cam').innerHTML = `At gain ${p.gain}: read noise <b>${fmtE(sen.rn)} e⁻</b> · <b>${fmtE(sen.eAdu)} e⁻/ADU</b> · full well <b>${fmtE(sen.fullWell)} e⁻</b>${unity}<br>Dark current at ${p.temp} °C: <b>${fmtE(r.dark)} e⁻/s</b>`;
-    const bayer = !p.mono && r.bw < (Model.FILTERS.find(f => f.id === p.filter) || {}).bw ? ' (limited by the Bayer matrix)' : '';
-    $('ro-sky').innerHTML = `<b>${r.mu.toFixed(2)} mag/″²</b> gives <b>${fmtE(r.sky)} e⁻/s</b> per pixel · ${r.bw} nm passband${bayer}`;
+    const nb = r.bw < 50;
+    const channel = p.mono ? (p.filter === 'RGB' ? 'One channel: the R, G or B filter fitted.' : '')
+      : nb ? 'One channel: the pixels recording one of the filter\'s lines.'
+      : 'One channel: the red, green or blue pixels of the Bayer matrix.';
+    $('ro-sky').innerHTML = `<b>${r.mu.toFixed(2)} mag/″²</b> gives <b>${fmtE(r.sky)} e⁻/s</b> per pixel · ${r.bw} nm passband` + (channel ? `<br>${channel}` : '');
     $('ro-tgt').innerHTML = `<b>${fmtE(r.target)} e⁻/s</b> per pixel at the peak · FWHM <b>${trim((p.tgtFwhm / r.scale).toFixed(1))} px</b>`;
   }
 
@@ -549,7 +560,7 @@
       const range = b.tRange[0] === b.tRange[1] ? fmtSub(b.t) + ' only' : `${fmtSub(b.tRange[0])} to ${fmtSub(b.tRange[1])}`;
       h += `<div class="rec-main">
           <div><div class="rec-plan"><b>${fmtSub(b.t)}</b> subs at gain <b>${b.gain}</b></div>
-            <div class="rec-note">${b.n.toLocaleString('en-US')} subs with the ${mine.name} filter · expected SNR <b>${b.snr.toFixed(1)}</b></div>
+            <div class="rec-note">${b.n.toLocaleString('en-US')} subs · ${mine.name} · expected SNR <b>${b.snr.toFixed(1)}</b></div>
             <div class="rec-note">${cmp}</div></div>
           <button type="button" class="primary" data-f="${mine.id}"${same(mine.id, b) ? ' disabled' : ''}>Apply</button>
         </div>
@@ -563,7 +574,7 @@
     h += `<h3>Best plan for each filter</h3><table class="budget rec-table"><thead><tr><th>Filter</th><th>Sub</th><th>Gain</th><th>Subs</th><th>Expected SNR</th><th>Sub dynamic range</th><th></th></tr></thead><tbody>`;
     rec.filters.forEach(f => {
       const tags = (f.id === p.filter ? ' <span class="tag">current</span>' : '') + (rec.top && f.id === rec.top.id ? ' <span class="tag best">highest SNR</span>' : '');
-      const name = `${f.name}${f.bw !== Model.FILTERS.find(x => x.id === f.id).bw ? ` (${f.bw} nm through the colour matrix)` : ''}${tags}`;
+      const name = `${f.name}${!p.mono && f.id === 'L' ? ` (${f.bw} nm per colour channel)` : ''}${tags}`;
       if (!f.best) { h += `<tr><td>${name}</td><td colspan="6" class="none">${f.reason}</td></tr>`; return; }
       const x = f.best;
       h += `<tr><td>${name}</td><td>${fmtSub(x.t)}</td><td>${x.gain}</td><td>${x.n.toLocaleString('en-US')}</td><td>${x.snr.toFixed(1)}</td><td>${x.drSub.toFixed(1)} stops</td>

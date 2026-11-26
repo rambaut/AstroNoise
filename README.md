@@ -51,13 +51,20 @@ rate = F0 × A × (pixel scale)² × QE × throughput × 10^(−0.4 μ) × bandw
 ```
 
 - **Zero point.** `F0 = 10⁸ photons s⁻¹ m⁻² nm⁻¹` for a magnitude-0 source in the V band. This is the rounded form of the widely used figure of about 1,000 photons s⁻¹ cm⁻² Å⁻¹, which follows from the V-band flux density of a magnitude-0 star, about 3.6 × 10⁻⁹ erg s⁻¹ cm⁻² Å⁻¹ [1, 2].
-- **Bandwidth.** The filter width in nanometres. A colour camera is limited to 100 nm, because its Bayer matrix restricts each pixel to roughly one colour band.
+- **Bandwidth.** The filter width in nanometres. A colour camera is limited to 100 nm, because its Bayer matrix restricts each pixel to roughly one colour band (see [Filters](#filters)).
 - **Emission-line targets.** Their brightness is given as a V-band equivalent, so the rate uses a fixed 88 nm, the approximate width of the V band [3], whatever filter is fitted. This is a simplification: it assumes the filter contains the line and passes it in full.
 - **Stars.** A star of magnitude `m` gives `F0 × A × QE × throughput × bandwidth × 10^(−0.4 m)` electrons per second in total, spread over a Gaussian seeing disc. A Gaussian is a convenient approximation; real stellar profiles have broader wings and are better described by a Moffat function [4].
 
 ### Filters
 
 Filters are modelled by their bandwidth only. The model has no actual wavelengths.
+
+Everything the tool reports is for **one channel**:
+
+- **Mono camera.** The one filter fitted: luminance (300 nm), one of R, G or B (100 nm), or one narrowband line.
+- **Colour camera.** One colour of the Bayer matrix, taken as a 100 nm band, when a UV-IR cut filter or no filter is fitted. Behind a dual- or multi-band filter it is one of the filter's lines, as recorded by the pixels of the matching colour. R, G and B filters are not offered for colour cameras, because the Bayer matrix already does that job.
+
+A full-colour or multi-line image is several such channels, each with its own SNR. The tool does not combine them.
 
 - **Sky glow** is treated as a flat spectrum, so its rate is proportional to the filter bandwidth. A 7 nm filter passes 7/300 of what a 300 nm luminance filter passes.
 - **Emission-line targets** keep a fixed flux whatever filter is fitted. This assumes the filter is centred on the line and passes all of it.
@@ -70,8 +77,8 @@ What this leaves out:
 - **Filter transmission.** Every filter passes 100% of the light in its band. Real narrowband filters peak at around 90%, and often less for the narrowest.
 - **Quantum efficiency at the line's wavelength.** The camera's peak QE is used throughout, so a line such as Hα at 656 nm, where most sensors are below their peak, comes out too bright.
 - **Structure in the sky spectrum.** Real sky glow has lines of its own (airglow, sodium and mercury lamps), and LED lighting is not flat. A filter that sits on or off one of these behaves differently from the flat assumption.
-- **Whether the filter contains the line.** An emission-line target keeps its full flux through any filter, including "R, G or B". That is only right for the one colour filter that covers the line.
-- **Colour cameras with narrowband filters.** The Bayer matrix only limits the bandwidth to 100 nm. Only one pixel in four (red) records Hα, which is not modelled, so narrowband SNR for colour cameras is optimistic.
+- **Whether the channel contains the line.** An emission-line target keeps its full flux in any channel, including an R, G or B filter or one colour of a Bayer matrix. That is only right for the one colour that covers the line.
+- **Bayer sampling.** The numbers are for a pixel of the colour that records the channel. Only one pixel in four is red (Hα, SII) or blue, and two in four are green, so the channel has fewer pixels than the sensor. The leak of a line into pixels of the other colours is also ignored.
 - **Mixed targets.** A target is either pure continuum or pure emission line, never both.
 
 ### Sky brightness
@@ -134,7 +141,7 @@ This definition is specific to this tool. It differs from the sensor dynamic ran
 
 ### Recommended plan
 
-The recommendation is a grid search over sub length (round values from 1 s to 30 min), gain (steps of 10, plus the high-conversion-gain and unity-gain settings) and filter. The target, camera, telescope, sky, temperature and total time are held fixed. The total is the exposure time when the session is planned by exposure time, and the wall-clock time otherwise.
+The recommendation is a grid search over sub length (round values from 1 s to 30 min), gain (steps of 10, plus the high-conversion-gain and unity-gain settings) and filter. The target, camera, telescope, sky, temperature and total time are held fixed. Only filters that suit the camera are searched. The total is the exposure time when the session is planned by exposure time, and the wall-clock time otherwise.
 
 The quantity maximised is the expected stack SNR at the target peak:
 

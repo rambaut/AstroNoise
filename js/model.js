@@ -14,14 +14,26 @@
   const BORTLE_SQM = [22.0, 21.9, 21.6, 21.1, 20.3, 19.3, 18.7, 18.2, 17.5];
 
   const FILTERS = [
-    { id: 'L', name: 'Luminance / UV-IR cut', bw: 300 },
-    { id: 'RGB', name: 'R, G or B filter', bw: 100 },
-    { id: 'NB12', name: 'Narrowband 12 nm', bw: 12 },
-    { id: 'NB7', name: 'Narrowband 7 nm', bw: 7 },
-    { id: 'NB3', name: 'Narrowband 3 nm', bw: 3 }
+    { id: 'L', name: 'Luminance / UV-IR cut', osc: 'UV-IR cut or no filter', bw: 300 },
+    // A colour camera's Bayer matrix already does this job, so R, G and B filters are for mono cameras only.
+    { id: 'RGB', name: 'R, G or B filter', bw: 100, monoOnly: true },
+    { id: 'NB12', name: 'Narrowband 12 nm', osc: 'Dual- or multi-band, 12 nm per line', bw: 12 },
+    { id: 'NB7', name: 'Narrowband 7 nm', osc: 'Dual- or multi-band, 7 nm per line', bw: 7 },
+    { id: 'NB3', name: 'Narrowband 3 nm', osc: 'Dual- or multi-band, 3 nm per line', bw: 3 }
   ];
   // A Bayer matrix limits each pixel of a colour camera to roughly one colour band.
   const OSC_MAX_BW = 100;
+
+  /** The filters that can be fitted to a mono (true) or colour (false) camera. */
+  const filtersFor = mono => FILTERS.filter(f => mono || !f.monoOnly);
+  /** The filter in use; one the camera cannot take falls back to the first in the list. */
+  function filterFor(s) {
+    const f = FILTERS.find(x => x.id === s.filter);
+    return f && (s.mono || !f.monoOnly) ? f : FILTERS[0];
+  }
+  const filterName = (f, mono) => mono ? f.name : f.osc || f.name;
+  /** Passband reaching one pixel (nm): one channel of a colour camera, or the filter on a mono camera. */
+  const passband = (f, mono) => mono ? f.bw : Math.min(f.bw, OSC_MAX_BW);
 
   function interp(table, x) {
     if (x <= table[0][0]) return table[0][1];
@@ -70,8 +82,8 @@
     const area = Math.PI / 4 * Math.pow(aperture / 1000, 2) * (1 - Math.pow(s.obs / 100, 2)); // m^2
     const scale = 206.265 * s.pix / s.fl;                                 // arcsec / pixel
     const pixArea = scale * scale;
-    const filter = FILTERS.find(f => f.id === s.filter) || FILTERS[0];
-    const bw = s.mono ? filter.bw : Math.min(filter.bw, OSC_MAX_BW);
+    const filter = filterFor(s);
+    const bw = passband(filter, s.mono);
     const mu = skyBrightness(s);
     const perMag0 = F0 * area * pixArea * s.qe * (s.thr / 100);           // e-/s/px/nm for mag 0 per arcsec^2
     const sky = perMag0 * Math.pow(10, -0.4 * mu) * bw;
@@ -174,7 +186,7 @@
       return { t, n, snr: st.snr * Math.sqrt(kept), snrNoLoss: st.snr, lost: 1 - kept, drSub: st.drSub, drStack: st.drStack, satStarMag, starOk, drOk };
     }
 
-    const filters = FILTERS.map(f => {
+    const filters = filtersFor(s.mono).map(f => {
       const r = rates(Object.assign({}, s, { filter: f.id }));
       const frac = starPeakFraction(s, r);
       let best = null, anyStar = false, maxDr = -Infinity, minStar = Infinity;
@@ -197,12 +209,12 @@
         const reason = !isFinite(minStar) ? 'The target itself fills the well, or the session is shorter than one sub.'
           : !anyStar ? `A magnitude ${s.recStarMag} star saturates in every plan; the brightest that can be kept is about magnitude ${minStar.toFixed(1)}.`
           : `No plan reaches ${s.recDrMin} stops of single-sub dynamic range; the most available is ${maxDr.toFixed(1)}.`;
-        return { id: f.id, name: f.name, bw: r.bw, best: null, reason };
+        return { id: f.id, name: filterName(f, s.mono), bw: r.bw, best: null, reason };
       }
       // The optimum is flat: report the span of sub lengths within 2% of the best at the chosen gain.
       const near = byGain[gains.indexOf(best.gain)].filter(c => c && c.snr >= 0.98 * best.snr).map(c => c.t);
       best.tRange = [Math.min.apply(null, near), Math.max.apply(null, near)];
-      return { id: f.id, name: f.name, bw: r.bw, best };
+      return { id: f.id, name: filterName(f, s.mono), bw: r.bw, best };
     });
 
     const r0 = rates(s);
@@ -211,14 +223,14 @@
     return {
       fixedInt, total, filters,
       current,                                                           // null when the current plan saturates
-      mine: filters.find(f => f.id === s.filter) || filters[0],
+      mine: filters.find(f => f.id === filterFor(s).id) || filters[0],
       top: ok.length ? ok.reduce((a, b) => b.best.snr > a.best.snr ? b : a) : null
     };
   }
 
   window.Model = {
     erf, starPeakFraction, keptFraction, recommend,
-    FILTERS, BORTLE_SQM, OSC_MAX_BW,
+    FILTERS, filtersFor, filterFor, filterName, passband, BORTLE_SQM, OSC_MAX_BW,
     interp, sensorAtGain, skyBrightness, sessionTime, subsInSession, rates, stats, compute
   };
 })();

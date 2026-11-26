@@ -36,7 +36,7 @@
     <section class="card">
       <div class="card-head">
         <h2 data-info="sim">Simulated pixels</h2>
-        <p>A random draw of photons and sensor noise across a Gaussian target. The chart is the middle row of the image patch.</p>
+        <p>A random draw of photons and sensor noise across a Gaussian target, for one channel. The chart is the middle row of the image patch.</p>
       </div>
       <div class="filters">
         <label>Frame
@@ -160,6 +160,7 @@
 
     <footer>
       <p><strong>Model.</strong> Per-pixel rates assume a flat spectrum with a V-band zero point of 10⁸ photons s⁻¹ m⁻² nm⁻¹.
+      Everything is for one channel: one filter on a mono camera, or one colour or one narrowband line on a colour camera.
       Sub noise is √(target + sky + dark + read²), with quantisation noise (e⁻/ADU ÷ √12) folded into read noise; stacking N subs improves SNR by √N.
       Dynamic range is log₂ of the headroom left above the background divided by the background noise. Calibration frames are assumed noiseless.</p>
       <p><strong>Camera data.</strong> Preset values are approximate transcriptions of published ZWO specifications and gain curves.
