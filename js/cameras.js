@@ -79,5 +79,44 @@ window.CAMERAS = [
     rn: [[0, 2.2], [100, 1.8], [200, 1.5], [270, 1.4], [510, 1.35]] },
   { id: 'asi174mm', name: 'ASI174MM', sensor: 'IMX174', mono: true, pix: 5.86, res: [1936, 1216],
     qe: 0.78, bits: 12, fw: 32000, gainMax: 400, hcg: null, defGain: 190, dark0: 0.1, cooled: false,
-    rn: [[0, 6.0], [100, 4.7], [200, 3.8], [300, 3.5], [400, 3.5]] }
+    rn: [[0, 6.0], [100, 4.7], [200, 3.8], [300, 3.5], [400, 3.5]] },
+  // Sensors that are here mainly because smart telescopes use them (see SMART_SCOPES below).
+  { id: 'asi662mc', name: 'ASI662MC', sensor: 'IMX662', mono: false, pix: 2.9, res: [1920, 1080],
+    qe: 0.91, bits: 12, fw: 38200, gainMax: 600, hcg: 150, defGain: 150, dark0: 0.02, cooled: false,
+    rn: [[0, 7.6], [100, 4.9], [149, 3.9], [150, 1.35], [190, 1.22], [300, 0.9], [600, 0.8]] },
+  // The HCG switch point and the shape of the curve are taken from the closely related IMX678.
+  { id: 'asi676mc', name: 'ASI676MC', sensor: 'IMX676', mono: false, pix: 2.0, res: [3552, 3552],
+    qe: 0.83, bits: 12, fw: 10550, gainMax: 600, hcg: 180, defGain: 180, dark0: 0.02, cooled: false,
+    rn: [[0, 2.8], [100, 2.2], [179, 1.9], [180, 1.0], [300, 0.72], [600, 0.56]] },
+  { id: 'asi178mc', name: 'ASI178MC', sensor: 'IMX178', mono: false, pix: 2.4, res: [3096, 2080],
+    qe: 0.81, bits: 14, fw: 15000, gainMax: 510, hcg: null, defGain: 100, dark0: 0.03, cooled: false,
+    rn: [[0, 2.2], [100, 1.8], [200, 1.5], [270, 1.4], [510, 1.35]] }
+];
+
+/*
+ * Smart telescopes: an objective and a colour sensor in one sealed, uncooled unit.
+ *
+ * Each one sets the telescope and selects the camera preset built on the same sensor. That preset
+ * is a ZWO camera, so the gain scale and the read-noise curve are ZWO's, not the smart telescope's
+ * own, and the sensor array is the full one even where the telescope crops or rotates it.
+ *
+ * Fields
+ *   ap   aperture (mm)
+ *   fl   focal length (mm)
+ *   obs  central obstruction (% of the aperture diameter); 0 for the refractors
+ *   cam  id of the camera preset with the same sensor
+ */
+window.SMART_SCOPES = [
+  { id: 'seestar-s30', maker: 'ZWO', name: 'Seestar S30', ap: 30, fl: 150, obs: 0, cam: 'asi662mc' },
+  { id: 'seestar-s30pro', maker: 'ZWO', name: 'Seestar S30 Pro', ap: 30, fl: 160, obs: 0, cam: 'asi585mc' },
+  { id: 'seestar-s50', maker: 'ZWO', name: 'Seestar S50', ap: 50, fl: 250, obs: 0, cam: 'asi462mc' },
+  { id: 'dwarf-mini', maker: 'DWARFLAB', name: 'DWARF mini', ap: 30, fl: 150, obs: 0, cam: 'asi662mc' },
+  { id: 'dwarf-3', maker: 'DWARFLAB', name: 'DWARF 3', ap: 35, fl: 150, obs: 0, cam: 'asi678mc' },
+  { id: 'vespera', maker: 'Vaonis', name: 'Vespera', ap: 50, fl: 200, obs: 0, cam: 'asi462mc' },
+  { id: 'vespera-2', maker: 'Vaonis', name: 'Vespera II', ap: 50, fl: 250, obs: 0, cam: 'asi585mc' },
+  { id: 'vespera-pro', maker: 'Vaonis', name: 'Vespera Pro', ap: 50, fl: 250, obs: 0, cam: 'asi676mc' },
+  { id: 'stellina', maker: 'Vaonis', name: 'Stellina', ap: 80, fl: 400, obs: 0, cam: 'asi178mc' },
+  // The obstruction of the eVscope's prime-focus sensor housing is not published; 30% is an estimate.
+  { id: 'evscope', maker: 'Unistellar', name: 'eVscope / eQuinox (original)', ap: 114, fl: 450, obs: 30, cam: 'asi224mc' },
+  { id: 'origin', maker: 'Celestron', name: 'Origin (original, IMX178)', ap: 152, fl: 335, obs: 41, cam: 'asi178mc' }
 ];

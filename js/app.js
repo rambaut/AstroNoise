@@ -32,7 +32,7 @@
   const TYPE_NAMES = { line: 'Emission nebulae', cont: 'Galaxies, clusters and dust' };
 
   const DEFAULTS = {
-    fl: 500, fr: 5, obs: 0, thr: 85,
+    scopeId: 'custom', fl: 500, fr: 5, obs: 0, thr: 85,
     camId: 'asi2600mm', pix: 3.76, qe: 91, bits: 16, fw: 50000, dark0: 0.003, darkDouble: 6, rnOverride: 0,
     gain: 100, temp: -10,
     skyMode: 'bortle', bortle: 5, sqm: 20.3, filter: 'L',
@@ -59,10 +59,33 @@
     if (t && h.has('tgtId')) { if (!h.has('tgtMag')) state.tgtMag = t[2]; if (!h.has('tgtType')) state.tgtType = t[3]; }
     if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
   })();
+  // Likewise a smart telescope: one named in the URL fills in whatever the URL does not give, and one
+  // whose telescope or camera has since been changed is no longer that smart telescope.
+  (function () {
+    const sc = smartScope(), h = new URLSearchParams(location.hash.slice(1));
+    if (sc && h.has('scopeId')) { const v = scopeSettings(sc); for (const k in v) if (!h.has(k)) state[k] = v[k]; }
+    checkScope();
+  })();
   let seed = 12345;
   const N_MAX = 1000000;
 
   const camera = () => CAMERAS.find(c => c.id === state.camId) || CAMERAS[0];
+  /** The settings that selecting a camera preset fills in. */
+  function cameraSettings(cam) {
+    return { pix: cam.pix, qe: cam.qe * 100, bits: cam.bits, fw: cam.fw, dark0: cam.dark0, rnOverride: 0,
+      gain: cam.defGain, temp: cam.cooled ? -10 : 20 };
+  }
+  function smartScope() { return SMART_SCOPES.find(x => x.id === state.scopeId); }
+  /** The settings that selecting a smart telescope fills in: its optics, its sensor, and no cooling. */
+  function scopeSettings(sc) {
+    const cam = CAMERAS.find(c => c.id === sc.cam);
+    return Object.assign({ fl: sc.fl, fr: +(sc.fl / sc.ap).toFixed(2), obs: sc.obs, camId: cam.id }, cameraSettings(cam), { temp: 20 });
+  }
+  /** Drop the smart telescope once the telescope or the camera model no longer match it. */
+  function checkScope() {
+    const sc = smartScope(), v = sc && scopeSettings(sc);
+    if (!sc || ['fl', 'fr', 'obs', 'camId'].some(k => state[k] !== v[k])) state.scopeId = 'custom';
+  }
   /** Model parameters: UI state plus the fixed properties of the selected camera. */
   function params() {
     const cam = camera();
@@ -151,6 +174,11 @@
       <p>Aperture = focal length ÷ focal ratio. Pixel scale = 206.265 × pixel size (µm) ÷ focal length (mm), in arcseconds per pixel.</p>
       <p>For extended objects and sky glow, the electrons per pixel depend on aperture area × the patch of sky each pixel sees, which works out as (pixel size ÷ focal ratio)². Focal length changes the image scale, not the per-pixel rate.</p>
       <p>Central obstruction is a percentage of the aperture diameter. Transmission covers mirrors, lenses and the filter's peak throughput.</p>`,
+    smart: `<h4>Smart telescope</h4>
+      <p>A smart telescope is an objective, a colour sensor, a mount and a computer in one unit. Choosing one fills in the Telescope panel with its aperture and focal length, and the Camera panel with the preset built on the same sensor. Changing the focal length, focal ratio, obstruction or camera model by hand switches this back to None.</p>
+      <p>The camera preset is the ZWO camera with that sensor, so the gain setting and read-noise curve are on ZWO's scale, not the smart telescope's own, and the field is that of the whole sensor. Smart telescopes are not cooled, so the sensor temperature is set to 20 °C: change it to suit the night.</p>
+      <p>Nothing else is changed. Most of these instruments are on alt-azimuth mounts and take subs of 10 to 30 seconds, and many have a built-in dual-band filter that can be switched in; set those in the Exposure and Sky panels.</p>
+      <p>Apertures, focal lengths and sensors are the manufacturers' published figures. The central obstruction of the Unistellar eVscope is an estimate.</p>`,
     camera: `<h4>Camera</h4>
       <p>Presets are approximate transcriptions of published ZWO specifications. Check them against the data sheet for your camera; every value here can be edited.</p>
       <p>Full well at gain 0 and the ADC bit depth set the electrons per ADU. The read-noise curve comes from the preset; enter an override to use a single value instead.</p>
@@ -215,6 +243,13 @@
       { key: 'obs', label: 'Central obstruction', unit: '% dia.', kind: 'number', min: 0, max: 70, step: 1 },
       { key: 'thr', label: 'Optics and filter transmission', unit: '%', kind: 'number', min: 5, max: 100, step: 1 }
     ] },
+    { title: 'Smart telescope', info: 'smart', open: true, fields: [
+      { key: 'scopeId', label: 'Model', kind: 'select',
+        groups: [['Separate parts', [['custom', 'None: separate telescope and camera']]]].concat(
+          [...new Set(SMART_SCOPES.map(x => x.maker))].map(m => [m, SMART_SCOPES.filter(x => x.maker === m)
+            .map(x => [x.id, `${x.name} — ${x.ap} mm f/${trim((x.fl / x.ap).toFixed(1))}`])])),
+        hint: 'Fills in the Camera and Telescope panels below, with the sensor at 20 °C.' }
+    ] },
     { title: 'Camera', info: 'camera', open: true, readout: 'cam', fields: [
       { key: 'camId', label: 'Model', kind: 'select', options: CAMERAS.map(c => [c.id, `${c.name} — ${c.sensor}, ${c.mono ? 'mono' : 'colour'}`]) },
       { key: 'pix', label: 'Pixel size', unit: 'µm', kind: 'number', min: 0.5, max: 30, step: 0.01 },
@@ -261,7 +296,7 @@
     ] }
   ];
   // Order of the panels in the sidebar.
-  const PANEL_ORDER = ['Target', 'Exposure', 'Recommendation', 'Sky', 'Camera', 'Telescope'];
+  const PANEL_ORDER = ['Target', 'Exposure', 'Recommendation', 'Sky', 'Smart telescope', 'Camera', 'Telescope'];
   SECTIONS.sort((x, y) => PANEL_ORDER.indexOf(x.title) - PANEL_ORDER.indexOf(y.title));
   const FIELDS = {};
   SECTIONS.forEach(sec => sec.fields.forEach(f => FIELDS[f.key] = f));
@@ -378,6 +413,7 @@
     state.gain = Math.max(0, Math.min(camera().gainMax, Math.round(state.gain)));
     const t = TARGETS.find(x => x[0] === state.tgtId);
     if (!t || t[2] !== state.tgtMag || t[3] !== state.tgtType) state.tgtId = 'custom';
+    checkScope();
     reconcile(); syncControls(); schedule();
   }
 
@@ -438,11 +474,9 @@
       if (t) { state.tgtMag = t[2]; state.tgtType = t[3]; }
     }
     if (key === 'tgtMag' || key === 'tgtType') state.tgtId = 'custom';
-    if (key === 'camId') {
-      const cam = camera();
-      Object.assign(state, { pix: cam.pix, qe: cam.qe * 100, bits: cam.bits, fw: cam.fw, dark0: cam.dark0, rnOverride: 0,
-        gain: cam.defGain, temp: cam.cooled ? -10 : 20 });
-    }
+    if (key === 'camId') Object.assign(state, cameraSettings(camera()));
+    if (key === 'scopeId') { const sc = smartScope(); if (sc) Object.assign(state, scopeSettings(sc)); }
+    else if (['fl', 'fr', 'obs', 'camId'].includes(key)) state.scopeId = 'custom';
     reconcile();
     syncControls();
     schedule();

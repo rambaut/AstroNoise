@@ -180,10 +180,11 @@ The simulation draws a 161 × 81 pixel patch containing a Gaussian target and, o
 
 ## Data
 
-- **Cameras** (`js/cameras.js`). Pixel size, quantum efficiency, ADC bit depth, full well, read-noise curves and dark current for 20 ZWO cameras. The values are approximate transcriptions of the specifications and gain charts that ZWO publishes for each camera. They were entered from memory and have not been verified against the current data sheets. Every value can be overridden in the Camera panel.
+- **Cameras** (`js/cameras.js`). Pixel size, quantum efficiency, ADC bit depth, full well, read-noise curves and dark current for 23 ZWO cameras. The values are approximate transcriptions of the specifications and gain charts that ZWO publishes for each camera. They were entered from memory and have not been verified against the current data sheets. Every value can be overridden in the Camera panel.
+- **Smart telescopes** (`SMART_SCOPES` in `js/cameras.js`). Aperture, focal length, central obstruction and sensor for 11 smart telescopes from ZWO, DWARFLAB, Vaonis, Unistellar and Celestron. Choosing one sets the telescope, selects the camera preset built on the same sensor and sets the sensor temperature to 20 °C, since none of them is cooled. The camera preset is a ZWO camera, so its gain scale and read-noise curve are ZWO's and not the smart telescope's own. The optics and sensors are the manufacturers' published figures; the central obstruction of the Unistellar eVscope is an estimate. Models whose sensors have no published read-noise data (Seestar S50 Pro, DWARF II, Unistellar eVscope 2 and Odyssey) are left out.
 - **Targets** (`TARGETS` in `js/app.js`). Representative peak surface brightnesses for common objects. These are rough figures for the named part of each object, not catalogue values, and real objects vary greatly across their extent.
 
-Corrections to either list are welcome.
+Corrections to any of these lists are welcome.
 
 ## References
 
